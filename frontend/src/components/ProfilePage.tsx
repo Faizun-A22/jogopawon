@@ -183,8 +183,20 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [isApplyingRef, setIsApplyingRef] = useState(false);
   const [refSuccessMsg, setRefSuccessMsg] = useState('');
   const [refErrorMsg, setRefErrorMsg] = useState('');
+  const [referralInfo, setReferralInfo] = useState<any>(null);
+  const [isLoadingRefInfo, setIsLoadingRefInfo] = useState(false);
 
-  const effectiveReferralCode = currentUser.referral_code || `PAWON-${(currentUser.phone || '9999').replace(/\D/g, '').slice(-4)}`;
+  useEffect(() => {
+    if (activeTab === 'coins' && currentUser.phone) {
+      setIsLoadingRefInfo(true);
+      api.getReferralInfo(currentUser.phone)
+        .then((data) => setReferralInfo(data))
+        .catch(() => {})
+        .finally(() => setIsLoadingRefInfo(false));
+    }
+  }, [activeTab, currentUser.phone]);
+
+  const effectiveReferralCode = referralInfo?.referral_code || currentUser.referral_code || 'PAWON77';
 
   const handleCopyReferral = () => {
     navigator.clipboard.writeText(effectiveReferralCode);
@@ -1943,9 +1955,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   <div className="flex gap-2">
                     <input
                       type="text"
+                      maxLength={10}
                       value={inputReferralCode}
                       onChange={(e) => setInputReferralCode(e.target.value.toUpperCase())}
-                      placeholder="Masukkan kode teman (Contoh: SITI-7890)"
+                      placeholder="Masukkan kode 7 karakter teman"
                       className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-xs font-mono uppercase tracking-wider text-white placeholder-slate-400 outline-none focus:border-emerald-400"
                     />
                     <button
@@ -1960,6 +1973,48 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                   {refErrorMsg && <p className="text-[11px] text-rose-300 font-bold">{refErrorMsg}</p>}
                 </form>
               )}
+
+              {/* Rincian Pendapatan Koin dari Teman yang Diundang */}
+              <div className="bg-slate-950/60 border border-emerald-800/50 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs sm:text-sm font-black text-white flex items-center gap-2">
+                    <span>👥</span>
+                    <span>Teman yang Bergabung & Pendapatan Koin</span>
+                  </h4>
+                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-800/60">
+                    5% dari Laba Belanja
+                  </span>
+                </div>
+
+                {isLoadingRefInfo ? (
+                  <p className="text-center py-4 text-xs text-slate-400 animate-pulse">Memuat data teman...</p>
+                ) : referralInfo?.friends && referralInfo.friends.length > 0 ? (
+                  <div className="space-y-2">
+                    {referralInfo.friends.map((friend: any) => (
+                      <div key={friend.id} className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl p-3 flex items-center justify-between gap-3 text-xs transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-emerald-700/60 text-white font-black flex items-center justify-center text-xs shrink-0">
+                            {friend.name ? friend.name.charAt(0).toUpperCase() : 'T'}
+                          </div>
+                          <div>
+                            <p className="font-bold text-white text-xs leading-tight">{friend.name}</p>
+                            <p className="text-[10px] text-emerald-300/80 font-mono">{friend.phone_masked} • {friend.orders_count} pesanan</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-black text-amber-300 text-xs sm:text-sm">+{friend.earnings_generated} Koin</p>
+                          <p className="text-[9px] text-slate-400">Total belanja: Rp {Math.round(friend.total_spent).toLocaleString('id-ID')}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-5 text-xs text-slate-400 space-y-1">
+                    <p className="font-semibold text-slate-300">Belum ada tetangga yang menggunakan kodemu.</p>
+                    <p className="text-[11px] text-slate-500">Klik "Bagikan ke WhatsApp" di atas untuk mulai mengajak dan kumpulkan koin gratis!</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

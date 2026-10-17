@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
@@ -460,29 +461,23 @@ func normalizePhone(p string) string {
 }
 
 func generateReferralCode(name, phone string) string {
-	var letters []rune
-	for _, r := range strings.ToUpper(name) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			letters = append(letters, r)
+	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Tanpa karakter membingungkan seperti O/0/I/1
+	randBytes := make([]byte, 7)
+	if _, err := rand.Read(randBytes); err == nil {
+		var code strings.Builder
+		for _, b := range randBytes {
+			code.WriteByte(charset[int(b)%len(charset)])
 		}
-	}
-	cleanName := string(letters)
-	if len(cleanName) > 4 {
-		cleanName = cleanName[:4]
-	}
-	if len(cleanName) < 3 {
-		cleanName = "PAWON"
+		return code.String()
 	}
 
-	cleanPhone := normalizePhone(phone)
-	suffix := "9999"
-	if len(cleanPhone) >= 4 {
-		suffix = cleanPhone[len(cleanPhone)-4:]
-	} else {
-		suffix = fmt.Sprintf("%04d", time.Now().UnixNano()%10000)
+	// Fallback unik berbasis nano-timestamp
+	nano := time.Now().UnixNano()
+	var code strings.Builder
+	for i := 0; i < 7; i++ {
+		code.WriteByte(charset[int((nano>>(i*4))&0xFF)%len(charset)])
 	}
-
-	return fmt.Sprintf("%s-%s", cleanName, suffix)
+	return code.String()
 }
 
 func (s *Store) saveUsersToDisk() {
@@ -3980,6 +3975,67 @@ func (a *App) handleApplyReferral(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	a.store.mutex.RLock()
+	defer a.store.mutex.RUnlock()
+
+	type AdminUserSummary struct {
+		ID               string    `json:"id"`
+		Name             string    `json:"name"`
+		Phone            string    `json:"phone"`
+		Email            string    `json:"email"`
+		Points           int       `json:"points"`
+		ReferralCode     string    `json:"referral_code"`
+		ReferredBy       string    `json:"referred_by"`
+		ReferralEarnings int       `json:"referral_earnings"`
+		ReferralCount    int       `json:"referral_count"`
+		OrdersCount      int       `json:"orders_count"`
+		TotalSpent       float64   `json:"total_spent"`
+		CreatedAt        time.Time `json:"created_at"`
+	}
+
+	var results []AdminUserSummary
+	for _, u := range a.store.users {
+		normPhone := normalizePhone(u.Phone)
+		orderCount := 0
+		var spent float64
+		for _, o := range a.store.orders {
+			if normalizePhone(o.CustomerPhone) == normPhone {
+				orderCount++
+				spent += o.TotalAmount
+			}
+		}
+
+		refCode := u.ReferralCode
+		if refCode == "" {
+			refCode = generateReferralCode(u.Name, u.Phone)
+		}
+
+		results = append(results, AdminUserSummary{
+			ID:               u.ID,
+			Name:             u.Name,
+			Phone:            u.Phone,
+			Email:            u.Email,
+			Points:           u.Points,
+			ReferralCode:     refCode,
+			ReferredBy:       u.ReferredBy,
+			ReferralEarnings: u.ReferralEarnings,
+			ReferralCount:    u.ReferralCount,
+			OrdersCount:      orderCount,
+			TotalSpent:       spent,
+			CreatedAt:        u.CreatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 // ==========================================
 // ADMIN AUTHENTICATION (HASHED & PROTECTED)
 // ==========================================
@@ -5476,6 +5532,7 @@ func main() {
 	mux.HandleFunc("/api/rewards/redemptions/action", app.handleRewardRedemptionAction)
 	mux.HandleFunc("/api/rewards/", app.handleRewardDetail)
 	mux.HandleFunc("/api/simulate-order", app.handleSimulateOrder)
+	mux.HandleFunc("/api/admin/users", app.handleAdminUsers)
 	mux.HandleFunc("/api/auth/login", app.handleCustomerLogin)
 	mux.HandleFunc("/api/auth/register", app.handleCustomerRegister)
 	mux.HandleFunc("/api/auth/profile", app.handleCustomerProfile)

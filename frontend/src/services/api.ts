@@ -385,6 +385,12 @@ export const api = {
     return data;
   },
 
+  async getAdminUsers(): Promise<any[]> {
+    const res = await fetch(`${API_BASE_URL}/admin/users`);
+    if (!res.ok) throw new Error('Gagal memuat data pelanggan');
+    return await res.json();
+  },
+
   async updateCustomerProfile(userData: {
     id: string;
     name?: string;

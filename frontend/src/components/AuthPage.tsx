@@ -15,6 +15,7 @@ import {
   MessageCircle,
   Truck,
   Sparkles,
+  Gift,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
@@ -38,6 +39,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -101,6 +103,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           phone: cleanPhone,
           email: email.trim() || undefined,
           password: password.trim(),
+          referral_code: referralCode.trim() ? referralCode.trim().toUpperCase() : undefined,
         });
       }
 
@@ -380,6 +383,34 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       <span>Kata sandi cocok!</span>
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Field Khusus Registrasi: Kode Referral Pengundang (Opsional) */}
+              {mode === 'register' && (
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black text-emerald-950">
+                      Kode Referral Teman / Pengundang:
+                    </label>
+                    <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                      Opsional (7 Karakter)
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <Gift className="w-4 h-4 text-emerald-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      maxLength={10}
+                      placeholder="Contoh: 7K9X2MN"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-emerald-200 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 text-xs sm:text-sm font-mono font-bold tracking-wider bg-white text-emerald-950 uppercase outline-none transition-all placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
+                    />
+                  </div>
+                  <p className="text-[11px] text-emerald-800 leading-tight">
+                    💡 Punya kode ajakan dari ibu-ibu / teman? Masukkan di sini agar akun Anda otomatis tertaut dan berbagi berkah koin.
+                  </p>
                 </div>
               )}
 

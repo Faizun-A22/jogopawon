@@ -87,6 +87,8 @@ import {
   Settings,
   ShieldCheck,
   ShieldAlert,
+  Users,
+  Phone,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -131,7 +133,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'orders' | 'procurement' | 'financials' | 'accounting' | 'products' | 'scraper' | 'waste' | 'rewards'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'procurement' | 'financials' | 'accounting' | 'products' | 'scraper' | 'rewards' | 'users'>('orders');
   const [orderFilter, setOrderFilter] = useState<string>('all');
 
   // Modals
@@ -213,6 +215,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [rewardClaimAlert, setRewardClaimAlert] = useState<RewardRedemption | null>(null);
   const [selectedCourierForClaim, setSelectedCourierForClaim] = useState<Record<string, string>>({});
   const [processingClaimId, setProcessingClaimId] = useState<string | null>(null);
+
+  // Admin Users & Loyalty Coins States
+  const [customerAccounts, setCustomerAccounts] = useState<any[]>([]);
+  const [loadingCustomerAccounts, setLoadingCustomerAccounts] = useState<boolean>(false);
+  const [customerSearch, setCustomerSearch] = useState<string>('');
 
   // New product form
   const [newProdName, setNewProdName] = useState('');
@@ -398,7 +405,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
   const loadExtraData = async () => {
     try {
       setLoadingAccounting(true);
-      const [proc, fin, wst, curs, acc, rwd, rdms] = await Promise.all([
+      const [proc, fin, wst, curs, acc, rwd, rdms, custs] = await Promise.all([
         api.getProcurement().catch(() => []),
         api.getFinancials().catch(() => null),
         api.getWaste().catch(() => []),
@@ -406,6 +413,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         api.getAccounting().catch(() => null),
         api.getRewards().catch(() => []),
         api.getRedemptions().catch(() => []),
+        api.getAdminUsers().catch(() => []),
       ]);
       setProcurementItems(Array.isArray(proc) ? proc : []);
       setFinancials(fin || null);
@@ -414,10 +422,23 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
       setAccounting(acc || null);
       setRewards(Array.isArray(rwd) ? rwd : []);
       setRedemptions(Array.isArray(rdms) ? rdms : []);
+      setCustomerAccounts(Array.isArray(custs) ? custs : []);
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingAccounting(false);
+    }
+  };
+
+  const loadCustomerAccountsOnly = async () => {
+    setLoadingCustomerAccounts(true);
+    try {
+      const data = await api.getAdminUsers();
+      setCustomerAccounts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingCustomerAccounts(false);
     }
   };
 
@@ -1749,15 +1770,18 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
           </button>
 
           <button
-            onClick={() => setActiveTab('waste')}
+            onClick={() => {
+              setActiveTab('users');
+              loadCustomerAccountsOnly();
+            }}
             className={`px-3.5 py-2 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
-              activeTab === 'waste'
+              activeTab === 'users'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'bg-white text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <AlertTriangle className="w-4 h-4" />
-            Sayur Afkir / Rusak
+            <Users className="w-4 h-4" />
+            <span>👥 Pelanggan & Koin ({customerAccounts.length})</span>
           </button>
 
 
@@ -3547,41 +3571,147 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         />
       )}
 
-      {/* TAB 5: WASTE / SAYUR RUSAK */}
-      {activeTab === 'waste' && (
-        <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+      {/* TAB: DATA PELANGGAN & KOIN PAWON (REFERRAL) */}
+      {activeTab === 'users' && (
+        <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
-              <h3 className="text-base font-black text-slate-900">Pencatatan Sayur Rusak / Afkir (Waste Log)</h3>
-              <p className="text-xs text-slate-500">Catat sayur yang patah, busuk, atau layu saat proses sortir gudang subuh.</p>
+              <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-600" />
+                <span>Daftar Akun Pelanggan & Koin Pawon</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pantau saldo koin, kode referral unik, pengundang, dan total belanja setiap akun ibu-ibu / pelanggan.
+              </p>
             </div>
-            <button
-              onClick={() => setIsAddWasteOpen(true)}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
-            >
-              <Plus className="w-4 h-4" /> Catat Sayur Afkir
-            </button>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Cari nama / nomor WA / kode..."
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:border-emerald-600 outline-none w-48 sm:w-64 transition-all"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={loadCustomerAccountsOnly}
+                disabled={loadingCustomerAccounts}
+                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs px-3.5 py-2 rounded-xl border border-emerald-200 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingCustomerAccounts ? 'animate-spin' : ''}`} />
+                <span>Segarkan</span>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-2">
-            {wasteLogs.length === 0 ? (
-              <p className="text-center text-slate-400 text-xs py-8">Belum ada catatan sayur afkir hari ini.</p>
-            ) : (
-              wasteLogs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs">
-                  <div>
-                    <span className="font-bold text-slate-800">{log.product_name}</span>
-                    <p className="text-[11px] text-slate-500">
-                      Jumlah: {log.quantity} {log.unit} • Alasan: {log.reason}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">{log.date}</span>
-                    <span className="font-black text-rose-600">Kerugian: -{formatRupiah(log.loss_amount)}</span>
-                  </div>
-                </div>
-              ))
-            )}
+          {/* Ringkasan Akun Pelanggan */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-4">
+              <span className="text-[11px] font-bold text-emerald-800 uppercase block">Total Akun Terdaftar</span>
+              <span className="text-2xl font-black text-emerald-950 mt-1 block">{customerAccounts.length} Akun</span>
+            </div>
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4">
+              <span className="text-[11px] font-bold text-amber-800 uppercase block">Total Saldo Koin Pelanggan</span>
+              <span className="text-2xl font-black text-amber-950 mt-1 block">
+                {customerAccounts.reduce((acc, u) => acc + (u.points || 0), 0).toLocaleString('id-ID')} Koin
+              </span>
+            </div>
+            <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4">
+              <span className="text-[11px] font-bold text-blue-800 uppercase block">Total Bonus Referral Diberikan</span>
+              <span className="text-2xl font-black text-blue-950 mt-1 block">
+                +{customerAccounts.reduce((acc, u) => acc + (u.referral_earnings || 0), 0).toLocaleString('id-ID')} Koin
+              </span>
+            </div>
+          </div>
+
+          {/* Tabel Pelanggan */}
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                <tr>
+                  <th className="py-3 px-4">Nama Pelanggan</th>
+                  <th className="py-3 px-4">WhatsApp</th>
+                  <th className="py-3 px-4">Saldo Koin</th>
+                  <th className="py-3 px-4">Kode Referral</th>
+                  <th className="py-3 px-4">Pengundang</th>
+                  <th className="py-3 px-4">Teman Diajak</th>
+                  <th className="py-3 px-4">Total Belanja</th>
+                  <th className="py-3 px-4 text-center">Aksi WA</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {customerAccounts
+                  .filter((u) => {
+                    const q = customerSearch.toLowerCase();
+                    return (
+                      !q ||
+                      (u.name && u.name.toLowerCase().includes(q)) ||
+                      (u.phone && u.phone.includes(q)) ||
+                      (u.referral_code && u.referral_code.toLowerCase().includes(q)) ||
+                      (u.referred_by && u.referred_by.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((cust) => (
+                    <tr key={cust.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-900 block">{cust.name}</span>
+                        <span className="text-[10px] text-slate-400">ID: {cust.id.slice(0, 10)}...</span>
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold text-slate-800">{cust.phone}</td>
+                      <td className="py-3 px-4">
+                        <span className="inline-flex items-center gap-1 font-black text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200/80">
+                          <Coins className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                          <span>{(cust.points || 0).toLocaleString('id-ID')}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-mono font-black text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          {cust.referral_code}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {cust.referred_by ? (
+                          <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                            {cust.referred_by}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-[10px] italic">Organik (Langsung)</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-900">{cust.referral_count || 0} teman</span>
+                        <span className="text-[10px] text-emerald-600 block">+{cust.referral_earnings || 0} koin</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-900">Rp {Math.round(cust.total_spent || 0).toLocaleString('id-ID')}</span>
+                        <span className="text-[10px] text-slate-400 block">{cust.orders_count || 0} pesanan</span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <a
+                          href={`https://wa.me/${cust.phone.replace(/^0/, '62').replace(/\D/g, '')}?text=${encodeURIComponent(`Halo Bu ${cust.name}, kami dari Admin JogoPawon Mart. Saldo Koin Pawon Anda saat ini ada ${cust.points || 0} Koin yang bisa ditukarkan dengan sembako gratis!`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-2.5 py-1.5 rounded-xl shadow-xs transition-all"
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>Chat</span>
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                {customerAccounts.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
+                      {loadingCustomerAccounts ? 'Memuat data pelanggan...' : 'Belum ada akun pelanggan yang terdaftar.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

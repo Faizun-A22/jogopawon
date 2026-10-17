@@ -40,6 +40,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [note, setNote] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -95,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           password: password.trim(),
           address: address.trim(),
           note: note.trim() || undefined,
+          referral_code: referralCode.trim() ? referralCode.trim().toUpperCase() : undefined,
         });
       }
 
@@ -328,6 +330,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onChange={(e) => setNote(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-600 text-xs bg-slate-50 text-slate-900 outline-none transition-all"
                   />
+                </div>
+
+                <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-2xl p-3 space-y-1.5">
+                  <label className="block text-xs font-bold text-emerald-950 flex items-center justify-between">
+                    <span>Kode Referral Teman / Pengundang:</span>
+                    <span className="text-[10px] text-emerald-700 font-normal">Opsional (7 Karakter)</span>
+                  </label>
+                  <div className="relative">
+                    <Gift className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      maxLength={10}
+                      placeholder="Contoh: 7K9X2MN"
+                      value={referralCode}
+                      onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-emerald-200 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 text-xs font-mono font-bold tracking-wider bg-white text-emerald-950 uppercase outline-none transition-all placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400"
+                    />
+                  </div>
+                  <p className="text-[10px] text-emerald-800 leading-tight">
+                    💡 Masukkan kode 7 karakter teman Anda untuk otomatis menautkan akun dan berbagi berkah koin.
+                  </p>
                 </div>
               </>
             )}
