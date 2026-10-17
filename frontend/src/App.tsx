@@ -450,6 +450,19 @@ export const App: React.FC = () => {
         api.getAdminStats().then(setAdminStats).catch(() => {});
       } else if (msg.event === 'NEW_REWARD_REDEMPTION') {
         playAlertSound();
+      } else if (msg.event === 'PUSH_NOTIFICATION_BROADCAST') {
+        // Notifikasi siaran broadcast dari admin
+        const payload = msg.payload as { title: string; body: string; url?: string; image?: string };
+        if (payload && payload.title) {
+          playAlertSound();
+          import('./utils/pwa').then(({ displayLocalPushNotification }) => {
+            displayLocalPushNotification(payload.title, {
+              body: payload.body,
+              icon: '/logo.png',
+              data: { url: payload.url || '/' },
+            });
+          }).catch(() => {});
+        }
       }
     });
 

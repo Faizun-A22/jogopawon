@@ -249,6 +249,26 @@ type RewardRedemption struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type PushSubscriptionRecord struct {
+	ID        string    `json:"id"`
+	Phone     string    `json:"phone,omitempty"`
+	Endpoint  string    `json:"endpoint"`
+	P256dh    string    `json:"p256dh"`
+	Auth      string    `json:"auth"`
+	UserAgent string    `json:"user_agent,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type PushBroadcastPayload struct {
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	Icon     string `json:"icon,omitempty"`
+	Badge    string `json:"badge,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Target   string `json:"target,omitempty"` // "all" | specific phone
+	Category string `json:"category,omitempty"` // "promo" | "order" | "coin"
+}
+
 type CashTransaction struct {
 	ID          string    `json:"id"`
 	Date        string    `json:"date"`
@@ -441,6 +461,7 @@ type Store struct {
 	cashTransactions    []CashTransaction
 	totalPointsRedeemed int
 	scrapedPrices       []ScrapedPriceItem
+	pushSubscriptions   []PushSubscriptionRecord
 	db                  *sql.DB
 }
 
@@ -4036,6 +4057,112 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+func (a *App) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Phone    string `json:"phone,omitempty"`
+		Endpoint string `json:"endpoint"`
+		Keys     struct {
+			P256dh string `json:"p256dh"`
+			Auth   string `json:"auth"`
+		} `json:"keys"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Endpoint == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Subscription endpoint tidak valid"})
+		return
+	}
+
+	a.store.mutex.Lock()
+	defer a.store.mutex.Unlock()
+
+	normPhone := normalizePhone(req.Phone)
+	exists := false
+	for i, sub := range a.store.pushSubscriptions {
+		if sub.Endpoint == req.Endpoint {
+			if normPhone != "" {
+				a.store.pushSubscriptions[i].Phone = normPhone
+			}
+			exists = true
+			break
+		}
+	}
+
+	if !exists {
+		newSub := PushSubscriptionRecord{
+			ID:        fmt.Sprintf("sub_%d", time.Now().UnixNano()),
+			Phone:     normPhone,
+			Endpoint:  req.Endpoint,
+			P256dh:    req.Keys.P256dh,
+			Auth:      req.Keys.Auth,
+			UserAgent: r.UserAgent(),
+			CreatedAt: time.Now(),
+		}
+		a.store.pushSubscriptions = append(a.store.pushSubscriptions, newSub)
+		log.Printf("[Push PWA] Subscriber baru terdaftar: %s (HP: %s)\n", newSub.ID, normPhone)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Perangkat HP pelanggan berhasil didaftarkan untuk menerima notifikasi!",
+	})
+}
+
+func (a *App) handleSendPushBroadcast(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req PushBroadcastPayload
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Payload pesan tidak valid"})
+		return
+	}
+
+	if req.Title == "" {
+		req.Title = "🥬 JogoPawon Mart Pasuruan"
+	}
+	if req.Icon == "" {
+		req.Icon = "/logo.png"
+	}
+	if req.Badge == "" {
+		req.Badge = "/favicon.png"
+	}
+	if req.URL == "" {
+		req.URL = "/"
+	}
+
+	a.store.mutex.RLock()
+	subCount := len(a.store.pushSubscriptions)
+	a.store.mutex.RUnlock()
+
+	// Broadcast secara realtime via WebSocket ke semua pelanggan yang sedang aktif
+	a.hub.broadcast <- WSMessage{
+		Event:   "PUSH_NOTIFICATION_BROADCAST",
+		Payload: req,
+	}
+
+	log.Printf("[Push Broadcast] Mengirim notifikasi: '%s' - '%s' ke %d subscriber HP\n", req.Title, req.Body, subCount)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":          true,
+		"message":          "Notifikasi promo berhasil dikirim ke seluruh HP pelanggan!",
+		"subscribers_sent": subCount,
+		"payload":          req,
+	})
+}
+
 // ==========================================
 // ADMIN AUTHENTICATION (HASHED & PROTECTED)
 // ==========================================
@@ -5496,6 +5623,23 @@ func main() {
 				} else {
 					log.Println("[Database] Tabel scraped_prices terverifikasi siap.")
 				}
+
+				// Tabel Push Subscriptions untuk Notifikasi HP Pelanggan
+				initPushSQL := `
+				CREATE TABLE IF NOT EXISTS push_subscriptions (
+					id VARCHAR(100) PRIMARY KEY,
+					phone VARCHAR(50),
+					endpoint TEXT NOT NULL UNIQUE,
+					p256dh TEXT NOT NULL,
+					auth TEXT NOT NULL,
+					user_agent TEXT,
+					created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+				);`
+				if _, pErr := db.Exec(initPushSQL); pErr != nil {
+					log.Printf("[Warning] Gagal inisialisasi tabel push_subscriptions: %v\n", pErr)
+				} else {
+					log.Println("[Database] Tabel push_subscriptions terverifikasi siap.")
+				}
 			}
 		}
 	}
@@ -5526,13 +5670,15 @@ func main() {
 	mux.HandleFunc("/api/admin/accounting/transactions", app.handleCashTransactions)
 	mux.HandleFunc("/api/admin/accounting/transactions/", app.handleCashTransactionDetail)
 	mux.HandleFunc("/api/admin/waste", app.handleWaste)
+	mux.HandleFunc("/api/admin/users", app.handleAdminUsers)
+	mux.HandleFunc("/api/push/subscribe", app.handlePushSubscribe)
+	mux.HandleFunc("/api/admin/push/broadcast", app.handleSendPushBroadcast)
 	mux.HandleFunc("/api/rewards", app.handleRewards)
 	mux.HandleFunc("/api/rewards/redeem", app.handleRedeemReward)
 	mux.HandleFunc("/api/rewards/redemptions", app.handleRewardRedemptions)
 	mux.HandleFunc("/api/rewards/redemptions/action", app.handleRewardRedemptionAction)
 	mux.HandleFunc("/api/rewards/", app.handleRewardDetail)
 	mux.HandleFunc("/api/simulate-order", app.handleSimulateOrder)
-	mux.HandleFunc("/api/admin/users", app.handleAdminUsers)
 	mux.HandleFunc("/api/auth/login", app.handleCustomerLogin)
 	mux.HandleFunc("/api/auth/register", app.handleCustomerRegister)
 	mux.HandleFunc("/api/auth/profile", app.handleCustomerProfile)

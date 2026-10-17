@@ -89,6 +89,7 @@ import {
   ShieldAlert,
   Users,
   Phone,
+  Bell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -220,6 +221,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [customerAccounts, setCustomerAccounts] = useState<any[]>([]);
   const [loadingCustomerAccounts, setLoadingCustomerAccounts] = useState<boolean>(false);
   const [customerSearch, setCustomerSearch] = useState<string>('');
+
+  // Push Broadcast Notification States
+  const [isPushModalOpen, setIsPushModalOpen] = useState<boolean>(false);
+  const [pushTitle, setPushTitle] = useState<string>('🥬 Promo Panen Subuh JogoPawon!');
+  const [pushBody, setPushBody] = useState<string>('Sayur petik subuh & bumbu dapur diskon spesial hari ini. Pesan sekarang antar subuh!');
+  const [pushUrl, setPushUrl] = useState<string>('/');
+  const [isSendingPush, setIsSendingPush] = useState<boolean>(false);
+  const [pushResultToast, setPushResultToast] = useState<{ success: boolean; message: string } | null>(null);
 
   // New product form
   const [newProdName, setNewProdName] = useState('');
@@ -3585,7 +3594,16 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPushModalOpen(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white font-black text-xs px-3.5 py-2 rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>📢 Broadcast Notifikasi HP</span>
+              </button>
+
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
@@ -6631,6 +6649,129 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                     Simpan Konfigurasi
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Broadcast Push Notification ke HP Pelanggan */}
+      {isPushModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Bell className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Kirim Notifikasi ke HP Pelanggan</h3>
+                  <p className="text-xs text-slate-500">Muncul langsung di status bar / lockscreen HP pelanggan</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPushModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setIsSendingPush(true);
+                try {
+                  const res = await api.sendPushBroadcast({
+                    title: pushTitle,
+                    body: pushBody,
+                    url: pushUrl,
+                    category: 'promo',
+                  });
+                  setPushResultToast({ success: true, message: `Berhasil dikirim ke ${res.subscriber_count || 'semua'} pelanggan!` });
+                  setTimeout(() => {
+                    setIsPushModalOpen(false);
+                    setPushResultToast(null);
+                  }, 2000);
+                } catch (err: any) {
+                  setPushResultToast({ success: false, message: err.message || 'Gagal mengirim notifikasi' });
+                } finally {
+                  setIsSendingPush(false);
+                }
+              }}
+              className="space-y-3.5 text-xs"
+            >
+              <div>
+                <label className="font-bold block mb-1 text-slate-700">Judul Notifikasi</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Cth: 🥬 Panen Subuh Tiba! Bayam & Kangkung Segar Diskon"
+                  value={pushTitle}
+                  onChange={(e) => setPushTitle(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1 text-slate-700">Isi Pesan Notifikasi</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Cth: Bumbu pawon komplit dan ayam potong segar sudah siap dipesan untuk diantar subuh besok. Yuk order sekarang bu!"
+                  value={pushBody}
+                  onChange={(e) => setPushBody(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl font-medium text-slate-800 outline-none focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1 text-slate-700">Tautan Tujuan Ketika Notifikasi Diklik (URL)</label>
+                <input
+                  type="text"
+                  placeholder="/"
+                  value={pushUrl}
+                  onChange={(e) => setPushUrl(e.target.value)}
+                  className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-slate-700 outline-none focus:border-emerald-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Contoh: <code>/</code> (Halaman Utama), <code>#katalog</code>, atau <code>#koin</code>
+                </span>
+              </div>
+
+              {pushResultToast && (
+                <div className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 ${pushResultToast.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800 border border-rose-200'}`}>
+                  {pushResultToast.success ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
+                  <span>{pushResultToast.message}</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsPushModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 font-medium"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingPush}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                >
+                  {isSendingPush ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Mengirim ke Seluruh HP...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="w-4 h-4" />
+                      <span>Kirim Siaran ke HP Pelanggan</span>
+                    </>
+                  )}
+                </button>
               </div>
             </form>
           </div>

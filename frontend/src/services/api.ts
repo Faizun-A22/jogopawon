@@ -611,6 +611,29 @@ export const api = {
   getScraperExportUrl(): string {
     return `${API_BASE_URL}/scraper/export`;
   },
+
+  async subscribePush(data: { phone?: string; endpoint: string; p256dh: string; auth: string; user_agent?: string }): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(`${API_BASE_URL}/push/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Gagal mendaftarkan notifikasi push');
+    return await res.json();
+  },
+
+  async sendPushBroadcast(payload: { title: string; body: string; url?: string; image?: string; category?: string }): Promise<{ success: boolean; message: string; subscriber_count: number }> {
+    const res = await fetch(`${API_BASE_URL}/admin/push/broadcast`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Gagal mengirim push notifikasi');
+    }
+    return await res.json();
+  },
 };
 
 // ==========================================

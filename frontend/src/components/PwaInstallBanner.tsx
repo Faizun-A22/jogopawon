@@ -124,7 +124,7 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({
                   </p>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-2 mt-2.5">
+                  <div className="flex flex-wrap items-center gap-2 mt-2.5">
                     <motion.button
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.96 }}
@@ -134,11 +134,23 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({
                       <Download className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span>{isIos() ? 'Petunjuk Pasang' : 'Pasang Sekarang'}</span>
                     </motion.button>
+
+                    <button
+                      onClick={async () => {
+                        const { requestPushPermissionAndSubscribe } = await import('../utils/pwa');
+                        await requestPushPermissionAndSubscribe();
+                        handleDismiss();
+                      }}
+                      className="bg-amber-400/90 hover:bg-amber-300 text-emerald-950 font-bold text-xs px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1 transition-all"
+                    >
+                      <span>🔔 Aktifkan Notif</span>
+                    </button>
+
                     <button
                       onClick={handleDismiss}
                       className="text-[11px] text-emerald-200/80 hover:text-white px-2 py-1 rounded transition-colors"
                     >
-                      Nanti Saja
+                      Nanti
                     </button>
                   </div>
                 </div>

@@ -101,3 +101,88 @@ export const promptInstallApp = async (): Promise<'accepted' | 'dismissed' | 'ma
 
   return 'unsupported';
 };
+
+/**
+ * Mendaftarkan Web Push Notification ke HP/Browser Pelanggan
+ */
+export const requestPushPermissionAndSubscribe = async (userPhone?: string): Promise<{ success: boolean; message: string }> => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return { success: false, message: 'Browser tidak mendukung push notification.' };
+  }
+
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      return { success: false, message: 'Izin notifikasi ditolak oleh pengguna.' };
+    }
+
+    if (!('serviceWorker' in navigator)) {
+      return { success: true, message: 'Notifikasi diizinkan (in-app alert mode).' };
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      // Dapatkan subscription push
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          // Gunakan generic applicationServerKey jika ada, atau daftarkan subscription
+        });
+      } catch (subErr) {
+        console.warn('[PWA Push] PushManager subscribe fallback:', subErr);
+      }
+    }
+
+    if (subscription) {
+      const rawKey = subscription.getKey ? subscription.getKey('p256dh') : null;
+      const rawAuth = subscription.getKey ? subscription.getKey('auth') : null;
+
+      const p256dh = rawKey ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawKey)))) : '';
+      const auth = rawAuth ? btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(rawAuth)))) : '';
+
+      // Kirim ke server
+      const { api } = await import('../services/api');
+      await api.subscribePush({
+        phone: userPhone,
+        endpoint: subscription.endpoint,
+        p256dh,
+        auth,
+        user_agent: navigator.userAgent,
+      });
+    }
+
+    return { success: true, message: 'Notifikasi promo & pesanan aktif di HP Anda!' };
+  } catch (err: any) {
+    console.warn('[PWA Push] Error requesting push permission:', err);
+    return { success: false, message: err.message || 'Gagal mengaktifkan notifikasi.' };
+  }
+};
+
+/**
+ * Tampilkan notifikasi lokal di HP/browser (ketika tab aktif atau via Service Worker)
+ */
+export const displayLocalPushNotification = async (title: string, options?: NotificationOptions) => {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  if (Notification.permission !== 'granted') return;
+
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      await (reg as any).showNotification(title, {
+        icon: '/logo.png',
+        badge: '/favicon.png',
+        vibrate: [200, 100, 200],
+        ...options,
+      });
+    } else {
+      new Notification(title, {
+        icon: '/logo.png',
+        ...options,
+      });
+    }
+  } catch (e) {
+    console.warn('[PWA] Error displaying notification:', e);
+  }
+};
