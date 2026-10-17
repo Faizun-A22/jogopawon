@@ -1,0 +1,63 @@
+{
+  "name": "JogoPawon Mart — Sayur Segar Panen Subuh",
+  "short_name": "JogoPawon",
+  "description": "Belanja sayur segar langsung dari kebun & pasar induk dengan sistem Pre-Order (PO) Panen Subuh diantar pukul 06:00 - 08:00 pagi.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "lang": "id",
+  "categories": [
+    "shopping",
+    "food",
+    "lifestyle"
+  ],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Katalog Sayur Segar",
+      "short_name": "Katalog",
+      "description": "Lihat daftar sayur panen subuh terlengkap",
+      "url": "/#categories",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Lacak Pesanan",
+      "short_name": "Lacak",
+      "description": "Cek posisi kurir & status pengantaran subuh",
+      "url": "/#orders",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

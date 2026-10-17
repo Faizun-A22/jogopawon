@@ -1,0 +1,72 @@
+# ==========================================
+# JOGOPAWON - ROOT GITIGNORE
+# ==========================================
+
+# 1. Environment & Credentials (CRITICAL - NEVER COMMIT SECRETS)
+.env
+.env.*
+!.env.example
+*.env
+backend/.env
+frontend/.env
+*.pem
+*.key
+
+# 2. Dependencies
+node_modules/
+frontend/node_modules/
+vendor/
+
+# 3. Build Outputs & Binaries
+dist/
+frontend/dist/
+dist-ssr/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+server.exe
+aplikasi-sayur-backend.exe
+tmp_*
+
+# 4. Local Go SDK & Tooling
+go_sdk/
+
+# 5. Archive & Compression Files
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# 6. Database & Local Data Storage
+backend/data/*.json
+!backend/data/.gitkeep
+
+# 7. OS & IDE Specific
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 8. Logs & Debugging
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 9. Temporary & Scratch Scripts
+test_siskaperbapo.go
+test_siskaperbapo.py
+*.tmp
