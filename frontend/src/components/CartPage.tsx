@@ -242,7 +242,7 @@ export const CartPage: React.FC<CartPageProps> = ({
         delivery_date: poDate,
         delivery_slot: selectedSlot,
         delivery_fee: deliveryFee,
-        discount: isFreeDelivery ? 500 : 0,
+        discount: 0,
         items: orderItems as any,
         subtotal: subtotal,
         total_amount: totalAmount,

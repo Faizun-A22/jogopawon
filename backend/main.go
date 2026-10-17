@@ -1906,6 +1906,9 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 
 		if isFreeDelivery {
 			req.DeliveryFee = 0
+			// Jika gratis ongkir berasal dari subsidi ongkir hemat (bukan kupon diskon produk/voucher),
+			// discount disetel 0 agar tidak memotong subtotal produk lagi
+			req.Discount = 0
 		} else if req.DeliveryFee <= 0 {
 			req.DeliveryFee = 500 // Standar ongkir hemat Pasuruan Rp 500
 		}

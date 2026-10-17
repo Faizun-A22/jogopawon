@@ -249,7 +249,7 @@ export const CartModal: React.FC<CartModalProps> = ({
         po_cutoff: "21:00 WIB",
         subtotal: subtotal,
         delivery_fee: deliveryFee,
-        discount: isFreeDelivery ? 500 : 0,
+        discount: 0,
         total_amount: totalAmount,
         total_profit: estimatedProfit,
         points_earned: estimatedPoints,
