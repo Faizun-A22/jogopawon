@@ -205,7 +205,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   };
 
   const handleShareReferralWA = () => {
-    const text = `Monggo Bu, belanja sayur subuh segar di JogoPawon praktis diantar ke depan rumah. Pakai kode referral saya *${effectiveReferralCode}* buat dapat bonus 7% Koin Belanja & Gratis Ongkir!\n\nBelanja di sini: https://jogopawon.com/?ref=${effectiveReferralCode}`;
+    const text = `Monggo Bu, belanja sayur subuh segar di JogoPawon praktis diantar ke depan rumah. Pakai kode referral saya *${effectiveReferralCode}* buat dapat bonus Koin Hadiah & Gratis Ongkir!\n\nBelanja di sini: https://jogopawon.com/?ref=${effectiveReferralCode}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -1846,19 +1846,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-1">
-                <span className="font-black text-slate-800 block">1. Belanja Harian (7% Koin)</span>
+                <span className="font-black text-slate-800 block">1. Belanja Harian Dapat Koin</span>
                 <p className="text-slate-500 text-[11px] leading-relaxed">
-                  Setiap belanja PO sayur subuh, 7% keuntungan toko otomatis dikembalikan ke akun Anda dalam bentuk Koin Pawon.
+                  Setiap kali Anda memesan sayur, sembako, dan lauk segar, koin belanja otomatis terkumpul di akun Anda.
                 </p>
               </div>
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-1">
                 <span className="font-black text-slate-800 block">2. Koin Tidak Hangus</span>
                 <p className="text-slate-500 text-[11px] leading-relaxed">
-                  Saldo koin Anda tersimpan aman di database dan tidak memiliki masa kedaluwarsa.
+                  Saldo koin Anda tersimpan aman selamanya dan tidak ada batas masa kedaluwarsa.
                 </p>
               </div>
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-1">
-                <span className="font-black text-slate-800 block">3. Hadiah Langsung Antar</span>
+                <span className="font-black text-slate-800 block">3. Hadiah Diantar ke Rumah</span>
                 <p className="text-slate-500 text-[11px] leading-relaxed">
                   Tukarkan dengan Minyak Goreng, Beras, Telur, atau Alat Dapur yang langsung diantar kurir subuh.
                 </p>
@@ -1871,15 +1871,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xl">🤝</span>
-                    <h3 className="text-base sm:text-lg font-black text-amber-300">Bagi Rezeki Pawon — Duta Sayur</h3>
+                    <h3 className="text-base sm:text-lg font-black text-amber-300">Bagi Rezeki Pawon — Ajak Teman</h3>
                   </div>
                   <p className="text-xs text-emerald-100/80 mt-0.5">
-                    Ajak tetangga & kawan belanja sayur. Teman dapat <strong>7% Koin</strong>, kamu dapat <strong>5% Koin</strong> dari keuntungan belanjanya!
+                    Ajak tetangga & kawan belanja sayur. Dapatkan bonus koin tambahan setiap kali teman Anda berbelanja!
                   </p>
                 </div>
                 <div className="flex items-center gap-2 bg-emerald-800/60 border border-emerald-500/30 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-200">
                   <Coins className="w-4 h-4 text-amber-400 fill-amber-400" />
-                  <span>Bonus 5% Laba Masuk Instan</span>
+                  <span>Bonus Koin Referral Seumur Hidup</span>
                 </div>
               </div>
 

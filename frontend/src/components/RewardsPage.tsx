@@ -77,7 +77,7 @@ export const RewardsPage: React.FC<RewardsPageProps> = ({
   };
 
   const handleShareWA = () => {
-    const text = `Halo bu! Belanja sayur subuh petik petani di JogoPawon Mart praktis diantar ke rumah. Pakai kode referal saya: *${effectiveReferralCode}* untuk dapat bonus koin & gratis ongkir!\n\nBuka di: https://jogopawon.com/?ref=${effectiveReferralCode}`;
+    const text = `Halo bu! Belanja sayur subuh petik petani di JogoPawon Mart praktis diantar ke rumah. Pakai kode referal saya: *${effectiveReferralCode}* buat dapat bonus koin hadiah & gratis ongkir!\n\nBuka di: https://jogopawon.com/?ref=${effectiveReferralCode}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -311,7 +311,7 @@ export const RewardsPage: React.FC<RewardsPageProps> = ({
                   Kode Referral Unik Anda
                 </h3>
                 <p className="text-xs text-slate-600 max-w-lg leading-relaxed">
-                  Bagikan kode 7 karakter Anda ke teman atau tetangga. Saat mereka daftar dan belanja, Anda otomatis memperoleh <strong className="text-amber-800 font-black">5% Koin</strong> dari keuntungan pesanan mereka seumur hidup!
+                  Bagikan kode 7 karakter Anda ke teman atau tetangga. Saat mereka daftar dan belanja, Anda otomatis memperoleh <strong className="text-amber-800 font-black">Bonus Koin Ekstra</strong> dari setiap pesanan belanja mereka seumur hidup!
                 </p>
               </div>
 

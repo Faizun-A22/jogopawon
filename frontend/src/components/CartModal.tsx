@@ -253,7 +253,7 @@ export const CartModal: React.FC<CartModalProps> = ({
         total_amount: totalAmount,
         total_profit: estimatedProfit,
         points_earned: estimatedPoints,
-        referral_code: referralCodeInput.trim() || currentUser?.referred_by || undefined,
+        referral_code: currentUser?.referred_by || undefined,
         referral_points_earned: Math.floor(estimatedProfit * 0.05),
         payment_method: paymentMethod,
         house_photo_url: activeAddress.house_photo_url || currentUser?.house_photo_url,
@@ -775,40 +775,6 @@ export const CartModal: React.FC<CartModalProps> = ({
                 )}
               </div>
 
-              {/* Kode Referral Pengundang (Ajak Tetangga) */}
-              <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-3 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <span>🤝</span>
-                    <span>Kode Referral Teman / Tetangga</span>
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-medium">Opsional</span>
-                </div>
-                {currentUser?.referred_by ? (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-950 p-2.5 rounded-xl flex items-center justify-between">
-                    <span className="text-xs">
-                      Terhubung pengundang: <strong className="font-mono text-emerald-800">{currentUser.referred_by}</strong>
-                    </span>
-                    <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-black px-2 py-0.5 rounded-md">
-                      Aktif ✓
-                    </span>
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      type="text"
-                      value={referralCodeInput}
-                      onChange={(e) => setReferralCodeInput(e.target.value.toUpperCase().trim())}
-                      placeholder="Punya kode teman? Contoh: SITI-7890"
-                      className="w-full text-xs p-2.5 bg-white rounded-xl border border-slate-200 focus:border-emerald-500 font-mono uppercase tracking-wider outline-none"
-                    />
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Teman yang mengundang Anda akan mendapatkan bonus koin 5% dari keuntungan pesanan ini.
-                    </p>
-                  </div>
-                )}
-              </div>
-
               {/* Payment Methods */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 block">Metode Pembayaran:</label>
@@ -946,7 +912,7 @@ export const CartModal: React.FC<CartModalProps> = ({
               <div className="flex justify-between items-center bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80 text-amber-900 font-bold">
                 <span className="flex items-center gap-1.5 text-xs">
                   <Coins className="w-3.5 h-3.5 fill-amber-400 text-amber-600 animate-pulse" />
-                  <span>Dapat Koin Pawon (7% Laba)</span>
+                  <span>Bonus Koin Belanja</span>
                 </span>
                 <span className="text-amber-800 font-black text-xs">+{estimatedPoints} Koin</span>
               </div>
