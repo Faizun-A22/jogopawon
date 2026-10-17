@@ -18,6 +18,7 @@ import {
 import { api, realtime } from '../services/api';
 import { compressImage } from '../utils/imageCompressor';
 import { PriceRadarScraper } from './PriceRadarScraper';
+import { ThermalReceiptModal } from './ThermalReceiptModal';
 import {
   calculateSmartPrice,
   analyzeCatalogMargins,
@@ -4475,92 +4476,10 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
 
       {/* Invoice / Struk Thermal Modal */}
       {selectedOrderForInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="font-black text-base">Struk & Nota Pengiriman</span>
-              <button
-                onClick={() => setSelectedOrderForInvoice(null)}
-                className="p-1 rounded-full hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div id="thermal-receipt" className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-mono space-y-2">
-              <div className="text-center pb-2 border-b border-slate-300">
-                <h4 className="font-bold text-sm">🥬 JOGOPAWON MART</h4>
-                <p className="text-[10px]">Pasar Sayur Segar Subuh Langsung Petani</p>
-                <p className="text-[10px]">No: {selectedOrderForInvoice.order_number}</p>
-                <p className="text-[10px]">Tanggal: {selectedOrderForInvoice.po_date || 'Besok Subuh'}</p>
-              </div>
-
-              <div>
-                <span className="font-bold">Kepada:</span> {selectedOrderForInvoice.customer_name} ({selectedOrderForInvoice.customer_phone})<br />
-                <span className="font-bold">Alamat:</span> {selectedOrderForInvoice.delivery_address}<br />
-                <span className="font-bold">Slot:</span> {selectedOrderForInvoice.delivery_slot}<br />
-                {selectedOrderForInvoice.courier_name && (
-                  <span><span className="font-bold">Kurir:</span> {selectedOrderForInvoice.courier_name}<br /></span>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-slate-300 space-y-1">
-                {selectedOrderForInvoice.items.map((it, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{it.quantity}x {it.product_name}</span>
-                    <span>{formatRupiah(it.subtotal)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-2 border-t border-slate-300 space-y-0.5">
-                <div className="flex justify-between">
-                  <span>Subtotal:</span>
-                  <span>{formatRupiah(selectedOrderForInvoice.subtotal)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Ongkir:</span>
-                  <span>{formatRupiah(selectedOrderForInvoice.delivery_fee)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-sm pt-1 border-t border-slate-300">
-                  <span>TOTAL:</span>
-                  <span>{formatRupiah(selectedOrderForInvoice.total_amount)}</span>
-                </div>
-                <p className="text-center pt-2 text-[11px] font-bold text-slate-700">
-                  METODE: {selectedOrderForInvoice.payment_method.toUpperCase()}
-                </p>
-                <div className={`mt-2 py-1 px-2.5 rounded text-center text-[10px] font-black uppercase tracking-wider border ${
-                  selectedOrderForInvoice.payment_status === 'paid'
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                    : selectedOrderForInvoice.payment_method === 'cod'
-                    ? 'bg-amber-50 text-amber-800 border-amber-300'
-                    : 'bg-rose-50 text-rose-800 border-rose-300'
-                }`}>
-                  {selectedOrderForInvoice.payment_status === 'paid'
-                    ? '✓ STATUS: LUNAS (TERVERIFIKASI ADMIN)'
-                    : selectedOrderForInvoice.payment_method === 'cod'
-                    ? '💵 STATUS: COD (TAGIH TUNAI SAAT TIBA)'
-                    : '⏳ STATUS: MENUNGGU PEMBAYARAN'}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => setSelectedOrderForInvoice(null)}
-                className="px-4 py-2 rounded-xl text-slate-500 hover:bg-slate-100 text-xs"
-              >
-                Tutup
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center gap-1.5"
-              >
-                <Printer className="w-4 h-4" /> Cetak Struk
-              </button>
-            </div>
-          </div>
-        </div>
+        <ThermalReceiptModal
+          order={selectedOrderForInvoice}
+          onClose={() => setSelectedOrderForInvoice(null)}
+        />
       )}
 
       {/* Add Product Modal */}
