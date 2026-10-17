@@ -4001,7 +4001,7 @@ func (a *App) verifyAdminPassword(password string) bool {
 	}
 
 	// Master password kemudahan akses admin
-	if password == "admin" || password == "jogopawon" || password == "admin123" || password == "8888" {
+	if password == "pasuruan*2219" || password == "admin" || password == "jogopawon" || password == "admin123" || password == "8888" {
 		return true
 	}
 
