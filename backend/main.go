@@ -1239,9 +1239,9 @@ func (s *Store) seedDefaultData() {
 	}
 
 	s.deliverySlots = []DeliverySlot{
-		{ID: "slot_1", TimeRange: "06:00 - 08:00 WIB", Label: "Antar Pagi Hari (Cocok untuk PO & Stok Siap)", MaxOrders: 60, Active: true},
-		{ID: "slot_2", TimeRange: "10:00 - 12:00 WIB", Label: "Antar Siang Hari (Sameday Barang Ready)", MaxOrders: 40, Active: true},
-		{ID: "slot_3", TimeRange: "15:00 - 17:00 WIB", Label: "Antar Sore Hari (Sameday Belanja Masak Sore)", MaxOrders: 40, Active: true},
+		{ID: "slot_1", TimeRange: "05:00 - 07:00 WIB", Label: "Antar Pagi Subuh (Sayur Petik Subuh)", MaxOrders: 60, Active: true},
+		{ID: "slot_2", TimeRange: "07:00 - 09:00 WIB", Label: "Antar Pagi Hari (Sarapan & Masak Pagi)", MaxOrders: 40, Active: true},
+		{ID: "slot_3", TimeRange: "14:00 - 16:00 WIB", Label: "Antar Sore Hari (Belanja Masak Sore)", MaxOrders: 40, Active: true},
 	}
 
 	s.couriers = []Courier{}
@@ -2170,6 +2170,76 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 		a.store.saveOrdersToDisk()
 
 		log.Printf("[Bukti Bayar Diunggah] Pesanan %s bukti transfer: %s", updatedOrder.OrderNumber, updatedOrder.PaymentProofURL)
+		a.hub.broadcast <- WSMessage{
+			Event:   "ORDER_STATUS_UPDATED",
+			Payload: updatedOrder,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(updatedOrder)
+		return
+	}
+
+	// Pembatalan oleh pelanggan: PUT /api/orders/{id}/cancel atau POST /api/orders/{id}/cancel
+	// Syarat: hanya boleh dibatalkan jika belum bayar (payment_status != "paid") dan status masih pending/menunggu konfirmasi
+	if strings.HasSuffix(id, "/cancel") {
+		orderID := strings.TrimSuffix(id, "/cancel")
+		if r.Method != http.MethodPut && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		a.store.mutex.Lock()
+		var updatedOrder *Order
+		var errorMsg string
+		for i, o := range a.store.orders {
+			if strings.EqualFold(o.ID, orderID) || strings.EqualFold(o.OrderNumber, orderID) {
+				// Cek apakah sudah lunas
+				if strings.EqualFold(o.PaymentStatus, "paid") {
+					errorMsg = "Pesanan yang sudah dibayar (Lunas) tidak dapat dibatalkan otomatis. Silakan hubungi admin WhatsApp."
+					break
+				}
+				// Cek apakah sudah dikonfirmasi admin atau dalam proses lanjut
+				currStatus := strings.ToLower(strings.TrimSpace(o.Status))
+				if currStatus != "pending" && currStatus != "menunggu konfirmasi" && currStatus != "" {
+					errorMsg = "Pesanan sudah dikonfirmasi/diproses oleh admin dan tidak dapat dibatalkan lagi."
+					break
+				}
+
+				a.store.orders[i].Status = "cancelled"
+				a.store.orders[i].UpdatedAt = time.Now()
+				updatedOrder = &a.store.orders[i]
+				break
+			}
+		}
+		a.store.mutex.Unlock()
+
+		if errorMsg != "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   errorMsg,
+			})
+			return
+		}
+
+		if updatedOrder == nil {
+			http.Error(w, "Order not found", http.StatusNotFound)
+			return
+		}
+
+		if a.store.db != nil {
+			_, _ = a.store.db.Exec(`
+				UPDATE orders
+				SET status = 'cancelled', updated_at = NOW()
+				WHERE id = $1 OR order_number = $1
+			`, updatedOrder.ID)
+		}
+
+		a.store.saveOrdersToDisk()
+
+		log.Printf("[Pesanan Dibatalkan Pelanggan] %s", updatedOrder.OrderNumber)
 		a.hub.broadcast <- WSMessage{
 			Event:   "ORDER_STATUS_UPDATED",
 			Payload: updatedOrder,
@@ -3267,7 +3337,7 @@ func (a *App) handleSimulateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	a.store.mutex.RUnlock()
 
-	deliverySlot := "06:00 - 08:00 WIB"
+	deliverySlot := "05:00 - 07:00 WIB"
 	a.store.mutex.RLock()
 	if len(a.store.deliverySlots) > 0 {
 		deliverySlot = a.store.deliverySlots[0].TimeRange

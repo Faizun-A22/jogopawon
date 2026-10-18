@@ -66,7 +66,7 @@ export const CartPage: React.FC<CartPageProps> = ({
 
   const [deliveryType, setDeliveryType] = useState<'sameday' | 'po'>('po');
   const [poDate, setPoDate] = useState<string>(tomorrowDate);
-  const [selectedSlot, setSelectedSlot] = useState<string>('06:00 - 08:00 WIB');
+  const [selectedSlot, setSelectedSlot] = useState<string>('05:00 - 07:00 WIB');
   const [customerName, setCustomerName] = useState(currentUser?.name || '');
   const [customerPhone, setCustomerPhone] = useState(currentUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState(currentUser?.note || '');
@@ -532,7 +532,7 @@ export const CartPage: React.FC<CartPageProps> = ({
                   Pilih Jam Antar Kurir:
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-                  {['06:00 - 08:00 WIB', '08:00 - 10:00 WIB', '16:00 - 18:00 WIB'].map((slot) => (
+                  {['05:00 - 07:00 WIB', '07:00 - 09:00 WIB', '14:00 - 16:00 WIB'].map((slot) => (
                     <button
                       key={slot}
                       type="button"

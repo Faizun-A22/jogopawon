@@ -68,7 +68,7 @@ export const CartModal: React.FC<CartModalProps> = ({
 
   const [deliveryType, setDeliveryType] = useState<'sameday' | 'po'>('po');
   const [poDate, setPoDate] = useState<string>(tomorrowDate);
-  const [selectedSlot, setSelectedSlot] = useState<string>('06:00 - 08:00 WIB');
+  const [selectedSlot, setSelectedSlot] = useState<string>('05:00 - 07:00 WIB');
   const [customerName, setCustomerName] = useState(currentUser?.name || '');
   const [customerPhone, setCustomerPhone] = useState(currentUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState(currentUser?.note || '');
@@ -558,8 +558,8 @@ export const CartModal: React.FC<CartModalProps> = ({
                 <div className="grid grid-cols-1 gap-2">
                   {deliverySlots.length === 0 ? (
                     <div className="p-2.5 rounded-xl border border-slate-200 bg-white text-xs">
-                      <span className="font-bold text-slate-700">06:00 - 08:00 WIB</span>
-                      <p className="text-[11px] text-slate-500">Pagi Hari</p>
+                      <span className="font-bold text-slate-700">05:00 - 07:00 WIB</span>
+                      <p className="text-[11px] text-slate-500">Pagi Subuh (Sayur Petik Subuh)</p>
                     </div>
                   ) : (
                     deliverySlots.map((slot) => (

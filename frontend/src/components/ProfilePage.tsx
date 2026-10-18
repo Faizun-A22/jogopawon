@@ -1171,7 +1171,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                const msg = encodeURIComponent(`Halo Admin JogoPawon Mart, saya ingin bertanya mengenai pesanan #${order.order_number} a/n ${order.customer_name}. Terima kasih!`);
+                                const itemsSummary = (order.items || [])
+                                  .map((it) => `• ${it.quantity}x ${it.product_name} (${it.unit || 'porsi'}) - ${formatRupiah((it.price || 0) * (it.quantity || 1))}`)
+                                  .join('\n');
+                                const msg = encodeURIComponent(
+                                  `Halo Admin JogoPawon Mart, saya ingin bertanya mengenai pesanan saya:\n\n` +
+                                  `📋 *No. Order*   : #${order.order_number}\n` +
+                                  `👤 *Nama Pemesan*: ${order.customer_name} (${order.customer_phone})\n` +
+                                  `📍 *Alamat Kirim*: ${order.delivery_address}\n` +
+                                  `📦 *Jadwal Antar*: ${order.po_date || order.delivery_date || '-'} (${order.delivery_slot || 'Pagi'})\n` +
+                                  `💵 *Total Tagihan*: *${formatRupiah(order.total_amount)}*\n` +
+                                  `💳 *Metode Bayar*: ${order.payment_method?.toUpperCase()} (${order.payment_status === 'paid' ? 'LUNAS' : 'BELUM LUNAS'})\n` +
+                                  `⏳ *Status Saat Ini*: *${order.status?.toUpperCase()}*\n\n` +
+                                  `🛒 *Rincian Belanja:*\n${itemsSummary}\n\n` +
+                                  `Mohon informasinya ya min, terima kasih! 🙏`
+                                );
                                 window.open(`https://wa.me/6289654190596?text=${msg}`, '_blank', 'noopener,noreferrer');
                               }}
                               className="p-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"

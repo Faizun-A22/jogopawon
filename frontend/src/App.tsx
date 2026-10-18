@@ -23,7 +23,7 @@ import { MainNavTab, BottomNav } from './components/BottomNav';
 import { Product, Category, DeliverySlot, Order, AdminStats, OrderStatus, User, CartItem, ProductVariant } from './types';
 import { api, realtime } from './services/api';
 import { promptInstallApp } from './utils/pwa';
-import { Leaf, Carrot, Apple, Flame, Soup, Layers, Sparkles, Search } from 'lucide-react';
+import { Leaf, Carrot, Apple, Flame, Soup, Layers, Sparkles, Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const App: React.FC = () => {
@@ -162,6 +162,7 @@ export const App: React.FC = () => {
     }
     return null;
   });
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
 
   const setActiveTrackingOrder = (order: Order | null | ((prev: Order | null) => Order | null)) => {
     setActiveTrackingOrderState((prev) => {
@@ -751,11 +752,15 @@ export const App: React.FC = () => {
           onOpenTracking={() => {
             if (orders.length > 0) {
               setActiveTrackingOrder(orders[0]);
+              setIsTrackingModalOpen(true);
             } else {
               setIsOrderHistoryModalOpen(true);
             }
           }}
-          onTrackOrder={(order) => setActiveTrackingOrder(order)}
+          onTrackOrder={(order) => {
+            setActiveTrackingOrder(order);
+            setIsTrackingModalOpen(true);
+          }}
           onReorder={handleReorder}
         />
         <BottomNav
@@ -768,14 +773,14 @@ export const App: React.FC = () => {
 
         {/* Live Order Tracking Modal inside Profile View */}
         <OrderTrackingModal
-          order={activeTrackingOrder}
-          onClose={() => setActiveTrackingOrder(null)}
+          order={isTrackingModalOpen ? activeTrackingOrder : null}
+          onClose={() => setIsTrackingModalOpen(false)}
           onOrderUpdated={(updated) => {
             setActiveTrackingOrder(updated);
             setOrders((prev) => prev.map((o) => (o.id === updated.id || o.order_number === updated.order_number ? updated : o)));
           }}
           onOpenOrderHistory={() => {
-            setActiveTrackingOrder(null);
+            setIsTrackingModalOpen(false);
             setIsOrderHistoryModalOpen(true);
           }}
         />
@@ -855,14 +860,14 @@ export const App: React.FC = () => {
 
         {/* Live Order Tracking Modal */}
         <OrderTrackingModal
-          order={activeTrackingOrder}
-          onClose={() => setActiveTrackingOrder(null)}
+          order={isTrackingModalOpen ? activeTrackingOrder : null}
+          onClose={() => setIsTrackingModalOpen(false)}
           onOrderUpdated={(updated) => {
             setActiveTrackingOrder(updated);
             setOrders((prev) => prev.map((o) => (o.id === updated.id || o.order_number === updated.order_number ? updated : o)));
           }}
           onOpenOrderHistory={() => {
-            setActiveTrackingOrder(null);
+            setIsTrackingModalOpen(false);
             setIsOrderHistoryModalOpen(true);
           }}
         />
@@ -875,6 +880,7 @@ export const App: React.FC = () => {
           onSelectOrder={(order) => {
             setIsOrderHistoryModalOpen(false);
             setActiveTrackingOrder(order);
+            setIsTrackingModalOpen(true);
           }}
           onReorder={handleReorder}
           onOpenStore={() => {
@@ -960,12 +966,23 @@ export const App: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <button
-                onClick={() => setActiveTrackingOrder(activeTrackingOrder)}
-                className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-xl transition-all shrink-0"
-              >
-                Lacak
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsTrackingModalOpen(true)}
+                  className="bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+                >
+                  Lacak
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTrackingOrder(null)}
+                  title="Tutup banner pesanan ini"
+                  className="p-1 rounded-lg text-emerald-300 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </motion.div>
             </div>
           )}
@@ -1540,6 +1557,7 @@ export const App: React.FC = () => {
         onOpenTracking={(order) => {
           setJustCompletedOrder(null);
           setActiveTrackingOrder(order);
+          setIsTrackingModalOpen(true);
         }}
         adminPhone="6289654190596"
       />
@@ -1549,14 +1567,14 @@ export const App: React.FC = () => {
 
       {/* Live Order Tracking Modal */}
       <OrderTrackingModal
-        order={activeTrackingOrder}
-        onClose={() => setActiveTrackingOrder(null)}
+        order={isTrackingModalOpen ? activeTrackingOrder : null}
+        onClose={() => setIsTrackingModalOpen(false)}
         onOrderUpdated={(updated) => {
           setActiveTrackingOrder(updated);
           setOrders((prev) => prev.map((o) => (o.id === updated.id || o.order_number === updated.order_number ? updated : o)));
         }}
         onOpenOrderHistory={() => {
-          setActiveTrackingOrder(null);
+          setIsTrackingModalOpen(false);
           setIsOrderHistoryModalOpen(true);
         }}
       />
@@ -1569,6 +1587,7 @@ export const App: React.FC = () => {
         onSelectOrder={(order) => {
           setIsOrderHistoryModalOpen(false);
           setActiveTrackingOrder(order);
+          setIsTrackingModalOpen(true);
         }}
         onReorder={handleReorder}
         onOpenStore={() => {

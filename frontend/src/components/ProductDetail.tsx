@@ -872,7 +872,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                   <div className="w-7 h-7 mx-auto rounded-full bg-emerald-500/30 text-emerald-300 flex items-center justify-center text-xs font-black">
                     4
                   </div>
-                  <span className="text-[10px] sm:text-xs font-bold block text-emerald-100">06:00-08:00</span>
+                  <span className="text-[10px] sm:text-xs font-bold block text-emerald-100">05:00-07:00</span>
                   <span className="text-[9px] text-emerald-300/80 block leading-tight">Tiba di Rumah</span>
                 </div>
               </div>

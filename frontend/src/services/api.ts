@@ -184,6 +184,18 @@ export const api = {
     return res.json();
   },
 
+  async cancelOrder(orderId: string): Promise<Order> {
+    const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Gagal membatalkan pesanan');
+    }
+    return data;
+  },
+
   async getAdminStats(): Promise<AdminStats> {
     const res = await fetch(`${API_BASE_URL}/admin/stats`);
     if (!res.ok) throw new Error('Gagal memuat data statistik');

@@ -19,6 +19,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 }) => {
   const [order, setOrder] = useState<Order | null>(initialOrder);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Baru saja');
 
   // Sinkronkan state lokal jika props berubah
@@ -457,7 +458,21 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  const msg = encodeURIComponent(`Halo Admin JogoPawon Mart, saya mau tanya status pesanan saya: No. Order ${order.order_number} (${order.customer_name}). Terima kasih!`);
+                  const itemsSummary = (order.items || [])
+                    .map((it) => `• ${it.quantity}x ${it.product_name} (${it.unit}) - ${formatRupiah(it.subtotal)}`)
+                    .join('\n');
+                  const msg = encodeURIComponent(
+                    `Halo Admin JogoPawon Mart, saya ingin bertanya mengenai pesanan saya:\n\n` +
+                    `📋 *No. Order*   : ${order.order_number}\n` +
+                    `👤 *Nama Pemesan*: ${order.customer_name} (${order.customer_phone})\n` +
+                    `📍 *Alamat Kirim*: ${order.delivery_address}\n` +
+                    `📦 *Jadwal Antar*: ${order.po_date || order.delivery_date || '-'} (${order.delivery_slot || 'Subuh'})\n` +
+                    `💵 *Total Tagihan*: *${formatRupiah(order.total_amount)}*\n` +
+                    `💳 *Metode Bayar*: ${order.payment_method?.toUpperCase()} (${order.payment_status === 'paid' ? 'LUNAS' : 'BELUM LUNAS'})\n` +
+                    `⏳ *Status Saat Ini*: *${order.status?.toUpperCase()}*\n\n` +
+                    `🛒 *Rincian Belanja:*\n${itemsSummary}\n\n` +
+                    `Mohon bantuannya ya min, terima kasih! 🙏`
+                  );
                   window.open(`https://wa.me/6289654190596?text=${msg}`, '_blank', 'noopener,noreferrer');
                 }}
                 className="w-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold py-2.5 px-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
@@ -466,6 +481,67 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 <span>Chat Admin WhatsApp untuk Pesanan Ini</span>
               </button>
             </div>
+
+            {/* Tombol Batalkan Pesanan (Hanya jika belum bayar dan belum dikonfirmasi) */}
+            {(() => {
+              const currStatus = (order.status || '').toLowerCase().trim();
+              const isNotConfirmed = currStatus === 'pending' || currStatus === 'menunggu konfirmasi' || currStatus === '';
+              const isNotPaid = order.payment_status !== 'paid';
+              const canCancel = isNotConfirmed && isNotPaid;
+
+              if (currStatus === 'cancelled') {
+                return (
+                  <div className="pt-1">
+                    <div className="w-full bg-rose-50 border border-rose-200 text-rose-800 text-xs py-2 px-3 rounded-2xl text-center font-bold">
+                      Pesanan ini telah dibatalkan
+                    </div>
+                  </div>
+                );
+              }
+
+              if (canCancel) {
+                return (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      disabled={isCancelling}
+                      onClick={async () => {
+                        const confirmed = window.confirm(
+                          `Apakah Anda yakin ingin membatalkan pesanan #${order.order_number}?\n\nPesanan yang dibatalkan tidak akan diproses atau dikirim.`
+                        );
+                        if (!confirmed) return;
+                        setIsCancelling(true);
+                        try {
+                          const updated = await api.cancelOrder(order.id || order.order_number);
+                          setOrder(updated);
+                          if (onOrderUpdated) onOrderUpdated(updated);
+                          alert('Pesanan Anda berhasil dibatalkan.');
+                        } catch (err: any) {
+                          alert(err.message || 'Gagal membatalkan pesanan. Hubungi admin WhatsApp.');
+                        } finally {
+                          setIsCancelling(false);
+                        }
+                      }}
+                      className="w-full bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold py-2.5 px-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60"
+                    >
+                      {isCancelling ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Membatalkan Pesanan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4 text-rose-600" />
+                          <span>Batalkan Pesanan Ini (Belum Bayar / Menunggu Konfirmasi)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                );
+              }
+
+              return null;
+            })()}
 
             {onOpenOrderHistory && (
               <div className="pt-1">
