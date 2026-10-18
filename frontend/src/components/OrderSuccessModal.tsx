@@ -125,14 +125,14 @@ Berikut saya lampirkan foto/screenshot bukti transfernya ya min. Mohon dicek dan
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-3 sm:p-4">
       {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs"
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
       />
 
       {/* Modal Dialog */}
@@ -141,14 +141,18 @@ Berikut saya lampirkan foto/screenshot bukti transfernya ya min. Mohon dicek dan
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.92, y: 20 }}
         transition={{ type: 'spring', damping: 25, stiffness: 260 }}
-        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl p-5 sm:p-6 text-center space-y-4 max-h-[92vh] overflow-y-auto border border-emerald-100"
+        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl p-5 sm:p-6 text-center space-y-4 max-h-[92vh] overflow-y-auto border border-emerald-100 pointer-events-auto"
       >
         <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer shadow-xs"
           aria-label="Tutup"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5 stroke-[2.5]" />
         </button>
 
         {/* Success Icon */}

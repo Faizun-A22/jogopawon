@@ -151,23 +151,23 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-3 sm:p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs"
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
       />
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden"
+        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden pointer-events-auto"
       >
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-emerald-700 to-green-600 text-white p-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-emerald-700 to-green-600 text-white p-4 sm:p-5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold bg-white/20 px-2 py-0.5 rounded-full">
@@ -181,7 +181,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <h2 className="text-lg font-black">{order.order_number}</h2>
+              <h2 className="text-base sm:text-lg font-black">{order.order_number}</h2>
               <button
                 type="button"
                 onClick={() => fetchLatestStatus(true)}
@@ -194,10 +194,15 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            aria-label="Tutup status pesanan"
+            className="w-10 h-10 -mr-1 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6 stroke-[2.5]" />
           </button>
         </div>
 
