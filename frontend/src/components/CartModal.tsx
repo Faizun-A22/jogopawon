@@ -72,7 +72,7 @@ export const CartModal: React.FC<CartModalProps> = ({
   const [customerName, setCustomerName] = useState(currentUser?.name || '');
   const [customerPhone, setCustomerPhone] = useState(currentUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState(currentUser?.note || '');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'qris' | 'bank_transfer'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'qris'>('cod');
   const [referralCodeInput, setReferralCodeInput] = useState(currentUser?.referred_by || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -162,15 +162,15 @@ export const CartModal: React.FC<CartModalProps> = ({
   // 7% total dari keuntungan menjadi poin belanja untuk pembeli
   const estimatedPoints = Math.floor(estimatedProfit * 0.07);
 
-  // Cek apakah akun pengguna baru (usia pendaftaran <= 1 bulan / 30 hari)
+  // Cek apakah akun pengguna baru (usia pendaftaran <= 2 minggu / 14 hari)
   const isNewUserFreeShipping = Boolean(
     currentUser && (
       !currentUser.created_at ||
-      (Date.now() - new Date(currentUser.created_at).getTime()) <= 30 * 24 * 60 * 60 * 1000
+      (Date.now() - new Date(currentUser.created_at).getTime()) <= 14 * 24 * 60 * 60 * 1000
     )
   );
 
-  // Free shipping if >= 35.000 or new user <= 1 month
+  // Free shipping if >= 35.000 or new user <= 2 weeks
   const freeDeliveryThreshold = 35000;
   const isFreeDelivery = subtotal === 0 || isNewUserFreeShipping || subtotal >= freeDeliveryThreshold;
   const deliveryFee = isFreeDelivery ? 0 : 500;
@@ -203,8 +203,8 @@ export const CartModal: React.FC<CartModalProps> = ({
       return;
     }
 
-    if (subtotal < 10000) {
-      setErrorMessage(`Minimal belanja sayur & sembako subuh adalah Rp 10.000. Tambahkan ${formatRupiah(10000 - subtotal)} lagi untuk melanjutkan.`);
+    if (subtotal < 5000) {
+      setErrorMessage(`Minimal belanja sayur & sembako subuh adalah Rp 5.000. Tambahkan ${formatRupiah(5000 - subtotal)} lagi untuk melanjutkan.`);
       return;
     }
 
@@ -778,7 +778,7 @@ export const CartModal: React.FC<CartModalProps> = ({
               {/* Payment Methods */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 block">Metode Pembayaran:</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('cod')}
@@ -803,19 +803,6 @@ export const CartModal: React.FC<CartModalProps> = ({
                   >
                     <QrCode className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
                     <span className="text-[11px] block">QRIS</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('bank_transfer')}
-                    className={`p-2.5 rounded-xl border text-center transition-all ${
-                      paymentMethod === 'bank_transfer'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900 font-bold'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    <CreditCard className="w-4 h-4 mx-auto mb-1 text-emerald-600" />
-                    <span className="text-[11px] block">Transfer</span>
                   </button>
                 </div>
 
@@ -857,24 +844,7 @@ export const CartModal: React.FC<CartModalProps> = ({
                     </div>
 
                     <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                      Dukung scan dari <strong>BCA, BRI, Mandiri, GoPay, OVO, DANA, ShopeePay</strong>. Setelah checkout, barcode QRIS resolusi penuh & form unggah bukti transfer akan langsung ditampilkan!
-                    </p>
-                  </div>
-                )}
-
-                {paymentMethod === 'bank_transfer' && (
-                  <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 text-xs space-y-2 text-emerald-950">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-emerald-900 flex items-center gap-1.5">
-                        <CreditCard className="w-4 h-4 text-emerald-600" />
-                        <span>Transfer Antar Bank</span>
-                      </span>
-                      <span className="text-[9px] bg-emerald-200/70 text-emerald-900 font-black px-2 py-0.5 rounded-full">
-                        Status Awal: Menunggu Bukti
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-emerald-900/90 leading-relaxed">
-                      Transfer ke rekening resmi JogoPawon (BCA / BRI / Mandiri). Setelah checkout, nomor rekening & tombol kirim bukti transfer WhatsApp akan langsung disediakan.
+                      Dukung scan dari <strong>BCA, BRI, Mandiri, GoPay, OVO, DANA, ShopeePay</strong>. Setelah checkout, barcode QRIS resolusi penuh & form unggah bukti bayar akan langsung ditampilkan!
                     </p>
                   </div>
                 )}
@@ -896,7 +866,7 @@ export const CartModal: React.FC<CartModalProps> = ({
                 <span>
                   {isFreeDelivery ? (
                     <span className="text-emerald-600 font-bold">
-                      GRATIS ({isNewUserFreeShipping ? 'Akun Baru < 1 Bln' : 'Bebas Ongkir'})
+                      GRATIS ({isNewUserFreeShipping ? 'Akun Baru < 2 Mgg' : 'Bebas Ongkir'})
                     </span>
                   ) : (
                     formatRupiah(deliveryFee)
@@ -940,14 +910,14 @@ export const CartModal: React.FC<CartModalProps> = ({
                 <AlertCircle className="w-4 h-4 text-amber-900" />
                 <span>⚠️ Lengkapi Alamat di Profil Terlebih Dahulu</span>
               </button>
-            ) : subtotal < 10000 ? (
+            ) : subtotal < 5000 ? (
               <div className="space-y-2">
                 <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-2xl p-3 text-xs flex items-center justify-between gap-2 shadow-2xs">
                   <span className="text-[11px] font-medium leading-tight">
-                    Minimal belanja sayur subuh: <strong>Rp 10.000</strong>. Tambah <strong>{formatRupiah(10000 - subtotal)}</strong> lagi.
+                    Minimal belanja sayur subuh: <strong>Rp 5.000</strong>. Tambah <strong>{formatRupiah(5000 - subtotal)}</strong> lagi.
                   </span>
                   <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-lg shrink-0">
-                    Kurang {formatRupiah(10000 - subtotal)}
+                    Kurang {formatRupiah(5000 - subtotal)}
                   </span>
                 </div>
                 <button

@@ -189,16 +189,12 @@ Berikut saya lampirkan foto/screenshot bukti transfernya ya min. Mohon dicek dan
             </p>
           </div>
         ) : (
-          /* QRIS & TRANSFER SECTION */
+          /* QRIS SECTION */
           <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-4 text-left text-xs space-y-3">
             <div className="flex items-center justify-between">
               <span className="font-black text-amber-950 flex items-center gap-1.5">
-                {order.payment_method === 'qris' ? (
-                  <QrCode className="w-4 h-4 text-amber-600" />
-                ) : (
-                  <CreditCard className="w-4 h-4 text-amber-600" />
-                )}
-                {order.payment_method === 'qris' ? 'Pembayaran QRIS All Payment' : 'Transfer Antar Bank'}
+                <QrCode className="w-4 h-4 text-amber-600" />
+                <span>Pembayaran QRIS Pasuruan</span>
               </span>
               <span className="text-[10px] bg-amber-200 text-amber-900 font-black px-2.5 py-0.5 rounded-full animate-pulse">
                 Menunggu Pembayaran
@@ -222,94 +218,57 @@ Berikut saya lampirkan foto/screenshot bukti transfernya ya min. Mohon dicek dan
             </div>
 
             {/* QRIS Barcode Box */}
-            {order.payment_method === 'qris' && (
-              <div className="bg-white p-3.5 rounded-2xl border border-amber-200 text-center space-y-2.5 shadow-2xs">
-                <div className="flex items-center justify-between px-1">
-                  <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
-                    <QrCode className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Scan QRIS Resmi JogoPawon Sembako</span>
-                  </span>
-                  <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
-                    NMID: ID1026616559690
-                  </span>
-                </div>
-
-                <div className="relative max-w-[210px] mx-auto bg-white p-2.5 rounded-2xl border-2 border-dashed border-amber-300 shadow-inner flex flex-col items-center">
-                  <img
-                    src="/qris_jogopawon.jpg"
-                    alt="QRIS JogoPawon Sembako"
-                    className="w-48 h-auto object-contain rounded-xl shadow-xs"
-                  />
-                  <div className="mt-2 w-full flex items-center justify-between text-[9px] text-slate-500 font-mono px-1">
-                    <span className="font-semibold text-slate-700">JOGOPAWON, SEMBAKO</span>
-                    <span className="font-bold text-amber-700">A01</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-center gap-2">
-                  <a
-                    href="/qris_jogopawon.jpg"
-                    download="QRIS_JogoPawon_Sembako.jpg"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-2xs"
-                  >
-                    <Download className="w-3.5 h-3.5 text-amber-700" />
-                    Unduh Barcode
-                  </a>
-                  <a
-                    href="/qris_jogopawon.jpg"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-medium px-2.5 py-1.5 rounded-xl flex items-center gap-1 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Perbesar
-                  </a>
-                </div>
-
-                <p className="text-[10px] text-slate-500 leading-tight">
-                  Mendukung semua e-wallet & mobile banking:
-                  <br />
-                  <strong className="text-slate-700 font-semibold">BCA, BRI, Mandiri, BNI, GoPay, OVO, DANA, ShopeePay</strong>
-                </p>
-              </div>
-            )}
-
-            {/* Bank Transfer Details Box */}
-            {order.payment_method === 'bank_transfer' && (
-              <div className="bg-white p-3.5 rounded-xl border border-amber-200 space-y-2">
-                <span className="text-[11px] font-black text-slate-800 block">
-                  Rekening Resmi Pembayaran:
+            <div className="bg-white p-3.5 rounded-2xl border border-amber-200 text-center space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
+                  <QrCode className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Scan QRIS Resmi JogoPawon Sembako</span>
                 </span>
-                <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                  <div>
-                    <span className="font-black text-slate-900 block text-xs">Bank BCA: 893-018-2941</span>
-                    <span className="text-[10px] text-slate-500">a/n JogoPawon Sayur Segar</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('8930182941', 'bca')}
-                    className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded font-bold hover:bg-slate-100"
-                  >
-                    {copiedText === 'bca' ? 'Tersalin' : 'Salin Rek'}
-                  </button>
-                </div>
-                <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
-                  <div>
-                    <span className="font-black text-slate-900 block text-xs">Bank BRI: 0341-01-002938-50-2</span>
-                    <span className="text-[10px] text-slate-500">a/n JogoPawon Mart</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy('034101002938502', 'bri')}
-                    className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded font-bold hover:bg-slate-100"
-                  >
-                    {copiedText === 'bri' ? 'Tersalin' : 'Salin Rek'}
-                  </button>
+                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                  NMID: ID1026616559690
+                </span>
+              </div>
+
+              <div className="relative max-w-[210px] mx-auto bg-white p-2.5 rounded-2xl border-2 border-dashed border-amber-300 shadow-inner flex flex-col items-center">
+                <img
+                  src="/qris_jogopawon.jpg"
+                  alt="QRIS JogoPawon Sembako"
+                  className="w-48 h-auto object-contain rounded-xl shadow-xs"
+                />
+                <div className="mt-2 w-full flex items-center justify-between text-[9px] text-slate-500 font-mono px-1">
+                  <span className="font-semibold text-slate-700">JOGOPAWON, SEMBAKO</span>
+                  <span className="font-bold text-amber-700">A01</span>
                 </div>
               </div>
-            )}
+
+              <div className="flex items-center justify-center gap-2">
+                <a
+                  href="/qris_jogopawon.jpg"
+                  download="QRIS_JogoPawon_Sembako.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors shadow-2xs"
+                >
+                  <Download className="w-3.5 h-3.5 text-amber-700" />
+                  Unduh Barcode
+                </a>
+                <a
+                  href="/qris_jogopawon.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-medium px-2.5 py-1.5 rounded-xl flex items-center gap-1 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Perbesar
+                </a>
+              </div>
+
+              <p className="text-[10px] text-slate-500 leading-tight">
+                Mendukung semua e-wallet & mobile banking:
+                <br />
+                <strong className="text-slate-700 font-semibold">BCA, BRI, Mandiri, BNI, GoPay, OVO, DANA, ShopeePay</strong>
+              </p>
+            </div>
 
             {/* PROOF OF PAYMENT UPLOAD & FEEDBACK */}
             <div className="pt-1 border-t border-amber-200/80 space-y-2">

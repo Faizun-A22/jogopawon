@@ -153,7 +153,32 @@ export const App: React.FC = () => {
   };
 
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [activeTrackingOrder, setActiveTrackingOrder] = useState<Order | null>(null);
+  const [activeTrackingOrder, setActiveTrackingOrderState] = useState<Order | null>(() => {
+    try {
+      const saved = localStorage.getItem('jogopawon_active_tracking_order');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to parse saved active order:', e);
+    }
+    return null;
+  });
+
+  const setActiveTrackingOrder = (order: Order | null | ((prev: Order | null) => Order | null)) => {
+    setActiveTrackingOrderState((prev) => {
+      const next = typeof order === 'function' ? order(prev) : order;
+      try {
+        if (next) {
+          localStorage.setItem('jogopawon_active_tracking_order', JSON.stringify(next));
+        } else {
+          localStorage.removeItem('jogopawon_active_tracking_order');
+        }
+      } catch (e) {
+        console.warn('Failed to sync active order to localStorage:', e);
+      }
+      return next;
+    });
+  };
+
   const [justCompletedOrder, setJustCompletedOrder] = useState<Order | null>(null);
   const [newOrderAlert, setNewOrderAlert] = useState<Order | null>(null);
   const [isOrderHistoryModalOpen, setIsOrderHistoryModalOpen] = useState(false);
@@ -168,6 +193,8 @@ export const App: React.FC = () => {
         list.unshift(order.order_number);
         localStorage.setItem('jogopawon_customer_orders', JSON.stringify(list.slice(0, 50)));
       }
+      // Simpan juga sebagai pesanan aktif yang sedang berlangsung
+      localStorage.setItem('jogopawon_active_tracking_order', JSON.stringify(order));
     } catch (e) {
       console.warn('Gagal mencatat order customer:', e);
     }
@@ -390,7 +417,27 @@ export const App: React.FC = () => {
       if (cats.length > 0) setCategories(cats);
       if (prods.length > 0) setProducts(prods);
       if (slots.length > 0) setDeliverySlots(slots);
-      if (ords.length > 0) setOrders(ords);
+      if (ords.length > 0) {
+        setOrders(ords);
+        setActiveTrackingOrder((current) => {
+          if (!current) {
+            // Cek apakah ada riwayat order customer di local storage
+            try {
+              const stored = localStorage.getItem('jogopawon_customer_orders');
+              if (stored) {
+                const list: string[] = JSON.parse(stored);
+                if (list.length > 0) {
+                  const latestMatch = ords.find((o: Order) => o.order_number === list[0] || o.id === list[0]);
+                  if (latestMatch) return latestMatch;
+                }
+              }
+            } catch {}
+            return current;
+          }
+          const matched = ords.find((o: Order) => o.id === current.id || o.order_number === current.order_number);
+          return matched || current;
+        });
+      }
       if (stats) setAdminStats(stats);
     } catch (err) {
       console.warn('Backend server connecting or in offline mode:', err);

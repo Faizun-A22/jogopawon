@@ -70,7 +70,7 @@ export const CartPage: React.FC<CartPageProps> = ({
   const [customerName, setCustomerName] = useState(currentUser?.name || '');
   const [customerPhone, setCustomerPhone] = useState(currentUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState(currentUser?.note || '');
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'qris' | 'bank_transfer'>('cod');
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'qris'>('cod');
   const [referralCodeInput, setReferralCodeInput] = useState(currentUser?.referred_by || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -162,15 +162,15 @@ export const CartPage: React.FC<CartPageProps> = ({
   // 7% total dari keuntungan menjadi koin belanja untuk pembeli
   const potentialPoints = Math.max(1, Math.floor(estimatedProfit * 0.07));
 
-  // Cek apakah akun pengguna baru (usia pendaftaran <= 1 bulan / 30 hari)
+  // Cek apakah akun pengguna baru (usia pendaftaran <= 2 minggu / 14 hari)
   const isNewUserFreeShipping = Boolean(
     currentUser && (
       !currentUser.created_at ||
-      (Date.now() - new Date(currentUser.created_at).getTime()) <= 30 * 24 * 60 * 60 * 1000
+      (Date.now() - new Date(currentUser.created_at).getTime()) <= 14 * 24 * 60 * 60 * 1000
     )
   );
 
-  // Standar ongkir Rp 500, GRATIS jika akun baru <= 1 bulan atau belanja >= Rp 35.000
+  // Standar ongkir Rp 500, GRATIS jika akun baru <= 2 minggu atau belanja >= Rp 35.000
   const isFreeDelivery = subtotal === 0 || isNewUserFreeShipping || subtotal >= 35000;
   const deliveryFee = isFreeDelivery ? 0 : 500;
   const totalAmount = subtotal + deliveryFee;
@@ -203,8 +203,8 @@ export const CartPage: React.FC<CartPageProps> = ({
       return;
     }
 
-    if (subtotal < 10000) {
-      setErrorMessage(`Minimal belanja sayur & sembako subuh adalah Rp10.000. Tambahkan Rp${(10000 - subtotal).toLocaleString('id-ID')} lagi untuk checkout.`);
+    if (subtotal < 5000) {
+      setErrorMessage(`Minimal belanja sayur & sembako subuh adalah Rp5.000. Tambahkan Rp${(5000 - subtotal).toLocaleString('id-ID')} lagi untuk checkout.`);
       return;
     }
 
@@ -449,19 +449,19 @@ export const CartPage: React.FC<CartPageProps> = ({
                 </h3>
                 <span className="text-[10px] bg-emerald-50 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
                   {isNewUserFreeShipping
-                    ? '🎉 Gratis Ongkir (Akun Baru < 1 Bln)'
+                    ? '🎉 Gratis Ongkir (Akun Baru < 2 Mgg)'
                     : deliveryFee === 0
                     ? '🎉 Bebas Ongkir'
                     : 'Ongkir Hemat Rp500'}
                 </span>
               </div>
 
-              {/* Promo Banner Gratis Ongkir 1 Bulan */}
+              {/* Promo Banner Gratis Ongkir 2 Minggu */}
               {isNewUserFreeShipping ? (
                 <div className="bg-emerald-50 border border-emerald-200/90 rounded-2xl p-2.5 text-xs text-emerald-900 flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
-                    🎉 <strong>Promo Pengguna Baru:</strong> Akun Anda berhak menikmati <strong>Gratis Ongkir</strong> selama 1 bulan pertama sejak pendaftaran!
+                    🎉 <strong>Promo Pengguna Baru:</strong> Akun Anda berhak menikmati <strong>Gratis Ongkir</strong> selama 2 minggu pertama sejak pendaftaran!
                   </span>
                 </div>
               ) : !currentUser ? (
@@ -469,7 +469,7 @@ export const CartPage: React.FC<CartPageProps> = ({
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
                     <span>
-                      Daftar akun sekarang untuk klaim <strong>Gratis Ongkir 1 bulan penuh</strong>!
+                      Daftar akun sekarang untuk klaim <strong>Gratis Ongkir 2 minggu penuh</strong>!
                     </span>
                   </div>
                   {onRequireAuth && (
@@ -783,7 +783,7 @@ export const CartPage: React.FC<CartPageProps> = ({
                 </h3>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('cod')}
@@ -815,22 +815,6 @@ export const CartPage: React.FC<CartPageProps> = ({
                     Scan via BCA, Mandiri, BRI, GoPay, DANA
                   </span>
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('bank_transfer')}
-                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                    paymentMethod === 'bank_transfer'
-                      ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 font-bold shadow-xs'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="text-lg block mb-1">🏦</span>
-                  <strong className="block text-xs">Transfer Bank</strong>
-                  <span className="text-[10px] text-slate-500 font-normal">
-                    BCA / BRI JogoPawon
-                  </span>
-                </button>
               </div>
             </div>
 
@@ -849,7 +833,7 @@ export const CartPage: React.FC<CartPageProps> = ({
                   {deliveryFee === 0 ? (
                     <span className="text-emerald-700 flex items-center gap-1">
                       <span className="line-through text-slate-400 font-normal">Rp500</span>
-                      <span>GRATIS ({isNewUserFreeShipping ? 'Akun Baru < 1 Bln' : 'Bebas Ongkir'})</span>
+                      <span>GRATIS ({isNewUserFreeShipping ? 'Akun Baru < 2 Mgg' : 'Bebas Ongkir'})</span>
                     </span>
                   ) : (
                     `Rp${deliveryFee.toLocaleString('id-ID')}`
@@ -893,17 +877,17 @@ export const CartPage: React.FC<CartPageProps> = ({
                 <AlertCircle className="w-5 h-5 text-amber-900" />
                 <span>⚠️ Lengkapi Alamat & Foto Rumah di Profil Terlebih Dahulu</span>
               </button>
-            ) : subtotal < 10000 ? (
+            ) : subtotal < 5000 ? (
               <div className="space-y-2">
                 <div className="bg-amber-50 border border-amber-200 text-amber-950 rounded-2xl p-3.5 text-xs flex items-center justify-between gap-3 shadow-2xs">
                   <div className="flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                     <span className="font-medium leading-tight">
-                      Minimal belanja sayur subuh: <strong>Rp10.000</strong>. Tambah <strong>Rp{(10000 - subtotal).toLocaleString('id-ID')}</strong> lagi agar hemat ongkir & bisa dikirim.
+                      Minimal belanja sayur subuh: <strong>Rp5.000</strong>. Tambah <strong>Rp{(5000 - subtotal).toLocaleString('id-ID')}</strong> lagi agar hemat ongkir & bisa dikirim.
                     </span>
                   </div>
                   <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded-lg shrink-0">
-                    Kurang Rp{(10000 - subtotal).toLocaleString('id-ID')}
+                    Kurang Rp{(5000 - subtotal).toLocaleString('id-ID')}
                   </span>
                 </div>
                 <button
