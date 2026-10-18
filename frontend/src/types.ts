@@ -8,7 +8,9 @@ export interface Category {
 
 export interface ProductVariant {
   id: string;
-  name: string;        // "1 Ons (100g)", "1/4 kg", "1/2 kg", "3/4 kg", "1 kg"
+  name: string;        // "1 Ons (100g)", "1 Ikat Kecil", "1 Ikat Besar", "1 Pcs", "1/4 kg"
+  unit?: string;       // "kg", "gram", "ikat", "pcs", "pack", "butir", "ons", "bungkus", "buah"
+  unit_type?: 'berat' | 'ikat' | 'pcs' | 'pack' | 'lainnya'; // Kategori satuan
   weight_g?: number;   // 100, 250, 500, 750, 1000
   price: number;       // Harga jual varian
   cost_price: number;  // Harga modal asli varian

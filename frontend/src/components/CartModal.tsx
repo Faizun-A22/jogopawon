@@ -486,7 +486,14 @@ export const CartModal: React.FC<CartModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {!hasPoItems && (
+                  {hasPoItems ? (
+                    <div className="p-2 rounded-xl text-left border border-amber-200 bg-amber-50/60 opacity-70 cursor-not-allowed text-xs">
+                      <span className="font-bold text-amber-800 block flex items-center gap-1">
+                        <span>⛔</span> Kirim Hari Ini (Nonaktif)
+                      </span>
+                      <span className="text-[10px] text-amber-700 font-medium">Ada item habis/PO - wajib petik subuh</span>
+                    </div>
+                  ) : (
                     <button
                       type="button"
                       onClick={() => {

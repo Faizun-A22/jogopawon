@@ -46,7 +46,9 @@ type Category struct {
 
 type ProductVariant struct {
 	ID        string  `json:"id"`
-	Name      string  `json:"name"`       // "1 Ons (100g)", "1/4 kg", "1/2 kg", "3/4 kg", "1 kg"
+	Name      string  `json:"name"`       // "1 Ons (100g)", "1 Ikat Kecil", "1 Pcs", "1/4 kg"
+	Unit      string  `json:"unit,omitempty"` // "kg", "gram", "ikat", "pcs", "pack", dll
+	UnitType  string  `json:"unit_type,omitempty"` // "berat", "ikat", "pcs", "pack", "lainnya"
 	WeightG   int     `json:"weight_g"`   // 100, 250, 500, 750, 1000
 	Price     float64 `json:"price"`      // Harga Jual
 	CostPrice float64 `json:"cost_price"` // Harga Modal Asli (HPP)

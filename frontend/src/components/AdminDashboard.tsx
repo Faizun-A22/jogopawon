@@ -746,7 +746,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
 
   // Helper for generating default variant templates with smart retail markups
   const generateDefaultVariants = (
-    templateType: 'bumbu' | 'sembako',
+    templateType: 'bumbu' | 'sembako' | 'ikat' | 'pcs',
     basePrice: number,
     baseCost: number
   ): ProductVariant[] => {
@@ -757,6 +757,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_1ons`,
           name: '1 Ons (100g)',
+          unit: 'ons',
+          unit_type: 'berat',
           weight_g: 100,
           price: Math.max(500, Math.round((basePrice * 0.12) / 500) * 500),
           cost_price: Math.max(250, Math.round((effectiveCost * 0.10) / 500) * 500),
@@ -764,6 +766,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_seperempat`,
           name: '1/4 kg (250g)',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 250,
           price: Math.max(1000, Math.round((basePrice * 0.28) / 500) * 500),
           cost_price: Math.max(500, Math.round((effectiveCost * 0.25) / 500) * 500),
@@ -771,6 +775,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_setengah`,
           name: '1/2 kg (500g)',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 500,
           price: Math.max(1500, Math.round((basePrice * 0.52) / 500) * 500),
           cost_price: Math.max(1000, Math.round((effectiveCost * 0.50) / 500) * 500),
@@ -778,6 +784,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_tigaperempat`,
           name: '3/4 kg (750g)',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 750,
           price: Math.max(2000, Math.round((basePrice * 0.77) / 500) * 500),
           cost_price: Math.max(1500, Math.round((effectiveCost * 0.75) / 500) * 500),
@@ -785,16 +793,20 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_1kg`,
           name: '1 kg',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 1000,
           price: basePrice,
           cost_price: effectiveCost,
         },
       ];
-    } else {
+    } else if (templateType === 'sembako') {
       return [
         {
           id: `var_${Date.now()}_setengah`,
           name: '1/2 kg',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 500,
           price: Math.max(1500, Math.round((basePrice * 0.52) / 500) * 500),
           cost_price: Math.max(1000, Math.round((effectiveCost * 0.50) / 500) * 500),
@@ -802,6 +814,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_1kg`,
           name: '1 kg',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 1000,
           price: basePrice,
           cost_price: effectiveCost,
@@ -809,6 +823,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_2kg`,
           name: '2 kg',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 2000,
           price: basePrice * 2,
           cost_price: effectiveCost * 2,
@@ -816,9 +832,77 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         {
           id: `var_${Date.now()}_5kg`,
           name: '5 kg (Kemasan Karung)',
+          unit: 'kg',
+          unit_type: 'berat',
           weight_g: 5000,
           price: Math.max(5000, Math.round((basePrice * 4.9) / 1000) * 1000),
           cost_price: effectiveCost * 5,
+        },
+      ];
+    } else if (templateType === 'ikat') {
+      return [
+        {
+          id: `var_${Date.now()}_1ikat`,
+          name: '1 Ikat Segar',
+          unit: 'ikat',
+          unit_type: 'ikat',
+          weight_g: 250,
+          price: basePrice,
+          cost_price: effectiveCost,
+        },
+        {
+          id: `var_${Date.now()}_2ikat`,
+          name: '2 Ikat (Hemat)',
+          unit: 'ikat',
+          unit_type: 'ikat',
+          weight_g: 500,
+          price: Math.max(1000, Math.round((basePrice * 1.95) / 500) * 500),
+          cost_price: effectiveCost * 2,
+        },
+        {
+          id: `var_${Date.now()}_3ikat`,
+          name: '3 Ikat (Keluarga)',
+          unit: 'ikat',
+          unit_type: 'ikat',
+          weight_g: 750,
+          price: Math.max(1500, Math.round((basePrice * 2.85) / 500) * 500),
+          cost_price: effectiveCost * 3,
+        },
+        {
+          id: `var_${Date.now()}_5ikat`,
+          name: '5 Ikat (Paket Usaha/Jualan)',
+          unit: 'ikat',
+          unit_type: 'ikat',
+          weight_g: 1250,
+          price: Math.max(2500, Math.round((basePrice * 4.7) / 500) * 500),
+          cost_price: effectiveCost * 5,
+        },
+      ];
+    } else {
+      return [
+        {
+          id: `var_${Date.now()}_1pcs`,
+          name: '1 Pcs / Buah',
+          unit: 'pcs',
+          unit_type: 'pcs',
+          price: basePrice,
+          cost_price: effectiveCost,
+        },
+        {
+          id: `var_${Date.now()}_3pcs`,
+          name: '3 Pcs / Buah (Paket Masak)',
+          unit: 'pcs',
+          unit_type: 'pcs',
+          price: Math.max(1000, Math.round((basePrice * 2.9) / 500) * 500),
+          cost_price: effectiveCost * 3,
+        },
+        {
+          id: `var_${Date.now()}_1pack`,
+          name: '1 Pack / Wadah',
+          unit: 'pack',
+          unit_type: 'pack',
+          price: Math.max(1000, Math.round((basePrice * 3.8) / 500) * 500),
+          cost_price: effectiveCost * 4,
         },
       ];
     }
@@ -1031,7 +1115,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
     setIsVariantModalOpen(true);
   };
 
-  const handleApplyVariantTemplate = (type: 'bumbu' | 'sembako') => {
+  const handleApplyVariantTemplate = (type: 'bumbu' | 'sembako' | 'ikat' | 'pcs') => {
     if (!variantTargetProduct) return;
     const priceData = getProductPriceData(variantTargetProduct);
     const basePrice = priceData.price;
@@ -5483,29 +5567,47 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 block">
                 ⚡ Terapkan Otomatis ke Tabel di Bawah:
               </span>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleApplyVariantTemplate('bumbu')}
-                  className="bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5"
+                  className="bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <Zap className="w-3.5 h-3.5 text-emerald-600" />
-                  Auto-Hitung Bumbu (1 Ons s/d 1 kg)
+                  Berat Timbangan (1 Ons s/d 1 kg)
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleApplyVariantTemplate('sembako')}
-                  className="bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5"
+                  className="bg-white hover:bg-amber-50 text-amber-900 border border-amber-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <Zap className="w-3.5 h-3.5 text-amber-600" />
-                  Auto-Hitung Sembako (1/4 kg s/d 5 kg)
+                  Sembako Karung (1/2 kg s/d 5 kg)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplyVariantTemplate('ikat')}
+                  className="bg-white hover:bg-teal-50 text-teal-900 border border-teal-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5 text-teal-600" />
+                  Satuan Ikat (1 Ikat, 2 Ikat, 3 Ikat)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleApplyVariantTemplate('pcs')}
+                  className="bg-white hover:bg-sky-50 text-sky-900 border border-sky-300 font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Zap className="w-3.5 h-3.5 text-sky-600" />
+                  Satuan Pcs / Buah / Pack
                 </button>
 
                 <button
                   type="button"
                   onClick={handleAddCustomVariant}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 ml-auto"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl shadow-2xs transition-all flex items-center gap-1.5 ml-auto cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   + Tambah Baris Varian
@@ -5583,13 +5685,14 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                   <table className="min-w-[780px] w-full text-xs text-left">
                     <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
                       <tr>
-                        <th className="py-2.5 px-3 min-w-[160px]">Label Varian</th>
-                        <th className="py-2.5 px-2 min-w-[90px] w-24">Berat (g)</th>
-                        <th className="py-2.5 px-3 min-w-[160px] w-44">Modal HPP (Rp)</th>
-                        <th className="py-2.5 px-3 min-w-[160px] w-44">Harga Jual (Rp)</th>
-                        <th className="py-2.5 px-3 min-w-[125px] text-center">Laba Toko</th>
-                        <th className="py-2.5 px-3 min-w-[110px] text-center">1% Poin Akun</th>
-                        <th className="py-2.5 px-2 min-w-[50px] w-12 text-center">Aksi</th>
+                        <th className="py-2.5 px-3 min-w-[150px]">Label Varian</th>
+                        <th className="py-2.5 px-2 min-w-[100px] w-28">Satuan</th>
+                        <th className="py-2.5 px-2 min-w-[80px] w-20">Berat (g)</th>
+                        <th className="py-2.5 px-3 min-w-[150px] w-40">Modal HPP (Rp)</th>
+                        <th className="py-2.5 px-3 min-w-[150px] w-40">Harga Jual (Rp)</th>
+                        <th className="py-2.5 px-3 min-w-[110px] text-center">Laba Toko</th>
+                        <th className="py-2.5 px-3 min-w-[100px] text-center">1% Poin</th>
+                        <th className="py-2.5 px-2 min-w-[45px] w-10 text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
@@ -5601,25 +5704,57 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                         return (
                           <tr key={v.id || idx} className="hover:bg-slate-50/80 transition-colors">
                             {/* 1. Name */}
-                            <td className="py-2.5 px-3 min-w-[160px]">
+                            <td className="py-2.5 px-3 min-w-[150px]">
                               <input
                                 type="text"
                                 value={v.name}
                                 onChange={(e) => handleUpdateVariantRow(idx, 'name', e.target.value)}
                                 className="w-full p-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs focus:border-emerald-500 outline-none"
-                                placeholder="Cth: 1/4 kg (250g)"
+                                placeholder="Cth: 1 Ikat / 1/4 kg / 1 Pcs"
                               />
                             </td>
 
-                            {/* 2. Weight in grams */}
-                            <td className="py-2.5 px-2 min-w-[90px]">
+                            {/* 2. Unit Selection (berat, ikat, pcs, pack, buah, dll) */}
+                            <td className="py-2.5 px-2 min-w-[100px]">
+                              <select
+                                value={v.unit || 'kg'}
+                                onChange={(e) => {
+                                  const selectedU = e.target.value;
+                                  let uType: 'berat' | 'ikat' | 'pcs' | 'pack' | 'lainnya' = 'lainnya';
+                                  if (selectedU === 'kg' || selectedU === 'gram' || selectedU === 'ons') uType = 'berat';
+                                  else if (selectedU === 'ikat') uType = 'ikat';
+                                  else if (selectedU === 'pcs' || selectedU === 'buah' || selectedU === 'butir') uType = 'pcs';
+                                  else if (selectedU === 'pack' || selectedU === 'bungkus') uType = 'pack';
+                                  
+                                  setTempVariants((prev) => {
+                                    const copy = [...prev];
+                                    copy[idx] = { ...copy[idx], unit: selectedU, unit_type: uType };
+                                    return copy;
+                                  });
+                                }}
+                                className="w-full p-2 border border-slate-200 rounded-xl font-bold text-slate-700 text-xs bg-white focus:border-emerald-500 outline-none cursor-pointer"
+                              >
+                                <option value="kg">kg (Kilogram)</option>
+                                <option value="gram">gram</option>
+                                <option value="ons">ons (100g)</option>
+                                <option value="ikat">ikat (Sayur)</option>
+                                <option value="pcs">pcs (Biji/Buah)</option>
+                                <option value="buah">buah</option>
+                                <option value="pack">pack / bungkus</option>
+                                <option value="butir">butir (Telur)</option>
+                                <option value="porsi">porsi</option>
+                              </select>
+                            </td>
+
+                            {/* 3. Weight in grams (Opsional jika pakai timbangan) */}
+                            <td className="py-2.5 px-2 min-w-[80px]">
                               <input
                                 type="number"
                                 min="0"
                                 value={v.weight_g || ''}
                                 onChange={(e) => handleUpdateVariantRow(idx, 'weight_g', Number(e.target.value))}
                                 className="w-full p-2 border border-slate-200 rounded-xl text-slate-700 text-xs font-semibold focus:border-emerald-500 outline-none text-center"
-                                placeholder="g"
+                                placeholder="g (ops)"
                               />
                             </td>
 
