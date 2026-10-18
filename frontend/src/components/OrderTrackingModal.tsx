@@ -151,7 +151,8 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
 
   return (
-    <div className="fixed inset-0 z-[70] overflow-y-auto flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-[80] overflow-y-auto flex items-center justify-center p-3 sm:p-4">
+      {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -160,14 +161,15 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs cursor-pointer"
       />
 
+      {/* Modal Container */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden pointer-events-auto"
+        exit={{ opacity: 0, scale: 0.95, y: 15 }}
+        className="relative z-10 w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
       >
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-emerald-700 to-green-600 text-white p-4 sm:p-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-emerald-700 to-green-600 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold bg-white/20 px-2 py-0.5 rounded-full">
@@ -186,7 +188,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 type="button"
                 onClick={() => fetchLatestStatus(true)}
                 title="Perbarui status sekarang"
-                className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all active:scale-90 flex items-center gap-1 text-[10px] font-semibold px-2"
+                className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all active:scale-90 flex items-center gap-1 text-[10px] font-semibold px-2 cursor-pointer"
               >
                 <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
                 <span>Sync</span>
@@ -195,20 +197,11 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
+            onClick={onClose}
             aria-label="Tutup status pesanan"
-            className="w-10 h-10 -mr-1 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs select-none touch-manipulation"
+            className="p-2 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
           >
-            <X className="w-6 h-6 stroke-[2.5]" />
+            <X className="w-5 h-5 stroke-[2.5]" />
           </button>
         </div>
 
