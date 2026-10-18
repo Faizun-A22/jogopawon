@@ -365,6 +365,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const recipientInputRef = useRef<HTMLInputElement>(null);
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const addressInputRef = useRef<HTMLTextAreaElement>(null);
+  const photoSectionRef = useRef<HTMLDivElement>(null);
 
   const handleOpenAddAddress = () => {
     setEditingAddressId(null);
@@ -437,6 +438,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       errors.address = 'Alamat terlalu singkat, mohon cantumkan jalan / nomor rumah / RT/RW';
     }
 
+    if (!modalHousePhoto.trim()) {
+      errors.photo = 'Foto tampak depan rumah / pagar wajib diunggah untuk kurir subuh!';
+    }
+
     if (Object.keys(errors).length > 0) {
       setAddressFormErrors(errors);
       // Mengarahkan dan fokus ke form field yang belum lengkap / bermasalah
@@ -452,6 +457,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
       } else if (errors.address && addressInputRef.current) {
         addressInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
         addressInputRef.current.focus();
+      } else if (errors.photo && photoSectionRef.current) {
+        photoSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       return;
     }
@@ -1469,12 +1476,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             {/* Modal Tambah / Ubah Alamat */}
             <AnimatePresence>
               {isAddressModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 pb-28 sm:pb-8 bg-black/60 backdrop-blur-xs overflow-y-auto">
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-8"
+                    className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4 my-auto max-h-[88vh] overflow-y-auto"
                   >
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
@@ -1495,11 +1502,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                     </div>
 
                     <form noValidate onSubmit={handleSaveModalAddress} className="space-y-4">
-                      {/* Label Alamat dengan Quick Chips */}
+                      {/* Jenis / Label Alamat (Pilihan Tunggal Chip) */}
                       <div>
-                        <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center justify-between mb-1.5">
                           <label className="block text-xs font-black text-slate-700">
-                            Label / Nama Alamat: <span className="text-red-500">*</span>
+                            Jenis / Label Rumah: <span className="text-red-500">*</span>
                           </label>
                           {addressFormErrors.label && (
                             <span className="text-[11px] font-bold text-red-600 flex items-center gap-1">
@@ -1508,40 +1515,48 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {['Rumah Utama', 'Rumah Orang Tua', 'Kantor / Kerja', 'Kos / Kontrakan'].map((chip) => (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => {
-                                setModalLabel(chip);
-                                if (addressFormErrors.label) setAddressFormErrors((prev) => ({ ...prev, label: '' }));
-                              }}
-                              className={`text-[11px] font-bold px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
-                                modalLabel === chip
-                                  ? 'bg-emerald-600 text-white shadow-2xs'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {chip}
-                            </button>
-                          ))}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {[
+                            { id: 'Rumah Utama', icon: '🏠', desc: 'Tempat tinggal utama' },
+                            { id: 'Rumah Orang Tua', icon: '🏡', desc: 'Keluarga / orang tua' },
+                            { id: 'Kantor / Kerja', icon: '🏢', desc: 'Tempat kerja' },
+                            { id: 'Kos / Kontrakan', icon: '🚪', desc: 'Kos atau sewa' },
+                          ].map((item) => {
+                            const isSelected = modalLabel === item.id;
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setModalLabel(item.id);
+                                  if (addressFormErrors.label) setAddressFormErrors((prev) => ({ ...prev, label: '' }));
+                                }}
+                                className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'bg-emerald-50 border-emerald-600 ring-2 ring-emerald-500/30 text-emerald-950 shadow-2xs'
+                                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between w-full mb-1">
+                                  <span className="text-lg">{item.icon}</span>
+                                  {isSelected && (
+                                    <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">
+                                      ✓
+                                    </span>
+                                  )}
+                                </div>
+                                <div>
+                                  <span className="font-extrabold text-xs block leading-tight">
+                                    {item.id}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 block mt-0.5">
+                                    {item.desc}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
                         </div>
-                        <input
-                          ref={labelInputRef}
-                          type="text"
-                          value={modalLabel}
-                          onChange={(e) => {
-                            setModalLabel(e.target.value);
-                            if (addressFormErrors.label) setAddressFormErrors((prev) => ({ ...prev, label: '' }));
-                          }}
-                          placeholder="Contoh: Rumah Utama / Kantor"
-                          className={`w-full px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm outline-none font-medium transition-all ${
-                            addressFormErrors.label
-                              ? 'border-red-500 ring-2 ring-red-500/20 bg-red-50/50 text-red-950 focus:border-red-600 focus:ring-red-500/30'
-                              : 'border-slate-200 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 bg-slate-50 focus:bg-white text-slate-900'
-                          }`}
-                        />
                       </div>
 
                       {/* Nama & Telepon Penerima */}
@@ -1651,14 +1666,37 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         </span>
                       </div>
 
-                      {/* Foto Tampak Depan Rumah */}
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <label className="block text-xs font-black text-slate-700">
-                          Foto Tampak Depan Rumah / Pagar (Panduan Kurir Subuh):
-                        </label>
+                      {/* Foto Tampak Depan Rumah (Wajib Diisi) */}
+                      <div
+                        ref={photoSectionRef}
+                        className={`pt-2.5 p-3 rounded-2xl border transition-all ${
+                          addressFormErrors.photo
+                            ? 'bg-red-50/70 border-red-400 ring-2 ring-red-400/30'
+                            : 'border-slate-100'
+                        } space-y-2`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-black text-slate-800">
+                            Foto Tampak Depan Rumah / Pagar (Panduan Kurir): <span className="text-red-500">*</span>
+                          </label>
+                          {addressFormErrors.photo && (
+                            <span className="text-[11px] font-bold text-red-600 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                              Wajib Foto
+                            </span>
+                          )}
+                        </div>
+
+                        {addressFormErrors.photo && (
+                          <div className="p-2 bg-red-100 border border-red-300 rounded-xl text-[11px] font-bold text-red-700 flex items-center gap-1.5 animate-pulse">
+                            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                            <span>{addressFormErrors.photo}</span>
+                          </div>
+                        )}
+
                         <div className="flex items-center gap-3">
                           {modalHousePhoto ? (
-                            <div className="relative group w-28 h-20 rounded-2xl overflow-hidden border-2 border-emerald-400 shadow-2xs shrink-0 bg-slate-100">
+                            <div className="relative group w-28 h-20 rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-2xs shrink-0 bg-slate-100">
                               <img src={modalHousePhoto} alt="Foto Rumah" className="w-full h-full object-cover" />
                               <button
                                 type="button"
@@ -1670,9 +1708,15 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               </button>
                             </div>
                           ) : (
-                            <div className="w-28 h-20 rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center p-2 text-center text-slate-400 shrink-0">
-                              <Camera className="w-5 h-5 text-slate-400 mb-0.5" />
-                              <span className="text-[9px] font-medium">Belum ada foto</span>
+                            <div className={`w-28 h-20 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-2 text-center shrink-0 transition-colors ${
+                              addressFormErrors.photo
+                                ? 'border-red-400 bg-red-50 text-red-500'
+                                : 'border-slate-300 bg-slate-50 text-slate-400'
+                            }`}>
+                              <Camera className={`w-5 h-5 mb-0.5 ${addressFormErrors.photo ? 'text-red-500 animate-bounce' : 'text-slate-400'}`} />
+                              <span className="text-[9px] font-bold">
+                                {addressFormErrors.photo ? '⚠️ Belum Ada' : 'Belum ada foto'}
+                              </span>
                             </div>
                           )}
 
@@ -1682,19 +1726,28 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               ref={modalPhotoInputRef}
                               accept="image/*"
                               className="hidden"
-                              onChange={handleModalPhotoUpload}
+                              onChange={(e) => {
+                                handleModalPhotoUpload(e);
+                                if (addressFormErrors.photo) {
+                                  setAddressFormErrors((prev) => ({ ...prev, photo: '' }));
+                                }
+                              }}
                             />
                             <button
                               type="button"
                               disabled={isUploadingModalPhoto}
                               onClick={() => modalPhotoInputRef.current?.click()}
-                              className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-black py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs w-full sm:w-auto"
+                              className={`font-black py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs w-full sm:w-auto ${
+                                addressFormErrors.photo
+                                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-500/20 animate-pulse'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              }`}
                             >
-                              <UploadCloud className="w-4 h-4 text-emerald-600" />
-                              <span>{isUploadingModalPhoto ? 'Mengunggah...' : modalHousePhoto ? 'Ganti Foto' : 'Ambil / Unggah Foto'}</span>
+                              <UploadCloud className="w-4 h-4" />
+                              <span>{isUploadingModalPhoto ? 'Mengunggah...' : modalHousePhoto ? 'Ganti Foto Rumah' : '📸 Ambil / Unggah Foto Rumah'}</span>
                             </button>
-                            <p className="text-[10px] text-slate-400">
-                              Format JPG/PNG/WEBP, otomatis dikompresi hemat kuota.
+                            <p className="text-[10px] text-slate-500">
+                              Kurir subuh butuh foto pagar/tampak depan agar tidak salah antar saat pagi hari.
                             </p>
                           </div>
                         </div>
@@ -1713,8 +1766,8 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         </span>
                       </label>
 
-                      {/* Tombol Simpan & Batal */}
-                      <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                      {/* Tombol Simpan & Batal (Sticky di Bawah Modal agar tidak tertutup) */}
+                      <div className="sticky -bottom-5 sm:-bottom-6 -mx-5 sm:-mx-6 px-5 sm:px-6 py-3.5 bg-white/95 backdrop-blur-md border-t border-slate-100 flex items-center justify-end gap-2.5 z-20 rounded-b-3xl shadow-lg">
                         <button
                           type="button"
                           onClick={() => setIsAddressModalOpen(false)}
@@ -1725,7 +1778,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                         <button
                           type="submit"
                           disabled={isSaving || isUploadingModalPhoto}
-                          className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md cursor-pointer disabled:opacity-50"
+                          className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
                         >
                           {isSaving ? 'Menyimpan...' : 'Simpan Alamat'}
                         </button>
