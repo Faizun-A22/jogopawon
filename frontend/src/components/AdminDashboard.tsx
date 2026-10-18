@@ -188,6 +188,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isVariantModalOpen, setIsVariantModalOpen] = useState<boolean>(false);
   const [variantTargetProduct, setVariantTargetProduct] = useState<Product | null>(null);
   const [tempVariants, setTempVariants] = useState<ProductVariant[]>([]);
+  const [tempAllowCustomBudget, setTempAllowCustomBudget] = useState<boolean>(false);
+  const [tempMinCustomBudget, setTempMinCustomBudget] = useState<number>(1000);
   const [isSavingVariants, setIsSavingVariants] = useState<boolean>(false);
 
   // Rewards Management States (Koin Pawon Hadiah)
@@ -1024,6 +1026,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
       initialVariants = recalculateProductVariants(prod, priceData.price, priceData.cost_price, initialVariants) || initialVariants;
     }
     setTempVariants(initialVariants);
+    setTempAllowCustomBudget(Boolean(prod.allow_custom_budget));
+    setTempMinCustomBudget(prod.min_custom_budget || 1000);
     setIsVariantModalOpen(true);
   };
 
@@ -1072,6 +1076,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         cost_price: priceData.cost_price,
         stock: priceData.stock,
         variants: tempVariants,
+        allow_custom_budget: tempAllowCustomBudget,
+        min_custom_budget: tempMinCustomBudget,
       });
       setQuickPriceEdits((prev) => {
         const copy = { ...prev };
@@ -5505,6 +5511,45 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                   + Tambah Baris Varian
                 </button>
               </div>
+            </div>
+
+            {/* Toggle Pembelian Nominal Bebas (Custom Budget / Ecer) Langsung di Pengaturan Varian */}
+            <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 rounded-2xl space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <label className="font-extrabold text-xs text-amber-950 flex items-center gap-1.5 cursor-pointer">
+                    <span className="text-sm">🥗</span>
+                    <span>Izinkan Pembelian Custom Budget (Nominal Bebas / Eceran)</span>
+                  </label>
+                  <p className="text-[11px] text-amber-900/80">
+                    Pelanggan bisa membeli sayur/produk ini dengan nominal budget sendiri (misal: Sawi Rp 2.000 walau harga standar 1 ikat Rp 5.000).
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={tempAllowCustomBudget}
+                  onChange={(e) => setTempAllowCustomBudget(e.target.checked)}
+                  className="w-5 h-5 accent-emerald-600 rounded cursor-pointer shrink-0"
+                />
+              </div>
+
+              {tempAllowCustomBudget && (
+                <div className="pt-2 border-t border-amber-200/80 flex items-center justify-between gap-3">
+                  <span className="text-xs font-bold text-amber-950">
+                    Minimal Pembelian Custom Budget (Rp):
+                  </span>
+                  <div className="w-36">
+                    <input
+                      type="number"
+                      min="500"
+                      step="500"
+                      value={tempMinCustomBudget}
+                      onChange={(e) => setTempMinCustomBudget(Number(e.target.value))}
+                      className="w-full p-2 text-xs border border-amber-300 rounded-xl bg-white font-black text-right text-slate-900 shadow-2xs"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Variant Table */}

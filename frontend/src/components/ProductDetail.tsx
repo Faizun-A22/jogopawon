@@ -512,25 +512,32 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 </div>
               </div>
 
-              {/* Product Weight Multiplier Variants (Kelipatan Berat Timbangan) */}
-              {product.variants && product.variants.length > 0 && (
-                <div ref={variantSectionRef} className="pt-3 border-t border-slate-100 space-y-2 scroll-mt-24">
+              {/* Product Weight Multiplier Variants & Custom Budget Eceran */}
+              {((product.variants && product.variants.length > 0) || isCustomBudgetAllowed) && (
+                <div ref={variantSectionRef} className="pt-3 border-t border-slate-100 space-y-2.5 scroll-mt-24">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
                       <Scale className="w-3.5 h-3.5 text-emerald-600" />
-                      Pilihan Berat Timbangan:
+                      Pilihan Berat Timbangan & Ecer:
                     </span>
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
-                      selectedVariant
+                      isCustomBudgetMode
+                        ? 'text-amber-900 bg-amber-50 border-amber-300'
+                        : selectedVariant
                         ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                         : 'text-amber-800 bg-amber-50 border-amber-300 animate-pulse'
                     }`}>
-                      {selectedVariant ? selectedVariant.name : '⚠️ Silakan Pilih Varian'}
+                      {isCustomBudgetMode
+                        ? `🥗 Ecer Budget: ${formatRupiah(customBudgetAmount)}`
+                        : selectedVariant
+                        ? selectedVariant.name
+                        : '⚠️ Silakan Pilih Varian'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {product.variants.map((v) => {
+                    {/* Standar variants */}
+                    {product.variants?.map((v) => {
                       const isSelected = !isCustomBudgetMode && selectedVariant?.id === v.id;
                       const vProfit = v.price - v.cost_price;
                       const vPoints = Math.max(0, Math.floor(vProfit * 0.07));
@@ -566,69 +573,58 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                         </button>
                       );
                     })}
-                  </div>
-                </div>
-              )}
 
-              {/* Custom Budget Mode Selector (Beli Ecer Sesuai Budget Bebas) */}
-              {isCustomBudgetAllowed && (
-                <div className="pt-3 border-t border-slate-100 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                      <span>💡 Pilihan Pembelian:</span>
-                    </span>
-                    <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
-                      Bisa Beli Ecer Budget
-                    </span>
-                  </div>
-
-                  {/* Mode Tabs */}
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomBudgetMode(false)}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
-                        !isCustomBudgetMode
-                          ? 'bg-white text-slate-900 shadow-2xs'
-                          : 'text-slate-500 hover:text-slate-700'
-                      }`}
-                    >
-                      {hasVariants ? 'Pilih Varian Timbangan' : `Beli Satuan (${product.unit})`}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCustomBudgetMode(true);
-                        setSelectedVariant(null);
-                      }}
-                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                        isCustomBudgetMode
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'text-slate-600 hover:text-emerald-700'
-                      }`}
-                    >
-                      <span>🥗 Beli Sesuai Budget (Rp)</span>
-                    </button>
+                    {/* Tombol Khusus: Custom Budget / Beli Ecer Bebas (diletakkan langsung di dalam pilihan varian) */}
+                    {isCustomBudgetAllowed && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomBudgetMode(true);
+                          setSelectedVariant(null);
+                        }}
+                        className={`p-2.5 rounded-2xl border text-left transition-all relative cursor-pointer ${
+                          isCustomBudgetMode
+                            ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-orange-50 ring-2 ring-amber-400/40 shadow-xs'
+                            : 'border-dashed border-amber-300 bg-amber-50/40 hover:bg-amber-50 text-amber-900'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-extrabold text-xs text-amber-950 flex items-center gap-1 truncate">
+                            <span>🥗</span>
+                            <span>Beli Ecer Budget</span>
+                          </span>
+                          {isCustomBudgetMode && <Check className="w-3.5 h-3.5 text-amber-700 shrink-0" />}
+                        </div>
+                        <div className="mt-1 flex items-baseline justify-between gap-1">
+                          <span className="font-black text-xs text-amber-900">
+                            {isCustomBudgetMode ? formatRupiah(customBudgetAmount) : 'Bebas Rp...'}
+                          </span>
+                          <span className="text-[9px] font-black text-amber-900 bg-amber-200/90 px-1.5 py-0.2 rounded shrink-0">
+                            Custom
+                          </span>
+                        </div>
+                      </button>
+                    )}
                   </div>
 
-                  {/* Custom Budget Input Box */}
-                  {isCustomBudgetMode && (
+                  {/* Input Nominal Budget Bebas jika kartu ecer dipilih */}
+                  {isCustomBudgetAllowed && isCustomBudgetMode && (
                     <motion.div
                       initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-300 rounded-2xl space-y-2.5 shadow-2xs"
+                      className="p-3.5 bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100/60 border border-amber-300 rounded-2xl space-y-2.5 shadow-2xs mt-2"
                     >
                       <div className="flex items-center justify-between">
-                        <label className="text-xs font-extrabold text-amber-950">
-                          Ketik Nominal Budget Anda:
+                        <label className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                          <span>🥗 Masukkan Nominal Pembelian Sesuai Kebutuhan:</span>
                         </label>
-                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
                           Min. {formatRupiah(minBudget)}
                         </span>
                       </div>
 
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-amber-700 text-sm">
                           Rp
                         </span>
                         <input
@@ -647,7 +643,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
                       {/* Quick preset chips */}
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] text-amber-900 font-bold mr-1">Contoh Cepat:</span>
+                        <span className="text-[10px] text-amber-900 font-bold mr-1">Pilihan Cepat:</span>
                         {[1000, 2000, 3000, 5000].filter((b) => b >= minBudget).map((chip) => (
                           <button
                             key={chip}
@@ -665,8 +661,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                       </div>
 
                       {/* Estimasi porsi / takaran ikat */}
-                      <div className="p-2 bg-white/80 rounded-xl border border-amber-200 text-xs flex items-center justify-between">
-                        <span className="text-[11px] text-slate-600 font-medium">Estimasi Takaran:</span>
+                      <div className="p-2 bg-white/90 rounded-xl border border-amber-200 text-xs flex items-center justify-between">
+                        <span className="text-[11px] text-slate-600 font-medium">Estimasi Takaran Sayur:</span>
                         <span className="text-[11px] font-black text-emerald-800">
                           {customProportionText}
                         </span>
