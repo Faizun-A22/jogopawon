@@ -773,7 +773,8 @@ export const App: React.FC = () => {
 
         {/* Live Order Tracking Modal inside Profile View */}
         <OrderTrackingModal
-          order={isTrackingModalOpen ? activeTrackingOrder : null}
+          isOpen={isTrackingModalOpen && !!activeTrackingOrder}
+          order={activeTrackingOrder}
           onClose={() => setIsTrackingModalOpen(false)}
           onOrderUpdated={(updated) => {
             setActiveTrackingOrder(updated);
@@ -860,7 +861,8 @@ export const App: React.FC = () => {
 
         {/* Live Order Tracking Modal */}
         <OrderTrackingModal
-          order={isTrackingModalOpen ? activeTrackingOrder : null}
+          isOpen={isTrackingModalOpen && !!activeTrackingOrder}
+          order={activeTrackingOrder}
           onClose={() => setIsTrackingModalOpen(false)}
           onOrderUpdated={(updated) => {
             setActiveTrackingOrder(updated);
@@ -1569,7 +1571,8 @@ export const App: React.FC = () => {
 
       {/* Live Order Tracking Modal */}
       <OrderTrackingModal
-        order={isTrackingModalOpen ? activeTrackingOrder : null}
+        isOpen={isTrackingModalOpen && !!activeTrackingOrder}
+        order={activeTrackingOrder}
         onClose={() => setIsTrackingModalOpen(false)}
         onOrderUpdated={(updated) => {
           setActiveTrackingOrder(updated);

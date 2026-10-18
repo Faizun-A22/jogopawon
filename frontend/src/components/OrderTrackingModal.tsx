@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { api, realtime } from '../services/api';
 
 interface OrderTrackingModalProps {
+  isOpen?: boolean;
   order: Order | null;
   onClose: () => void;
   onOrderUpdated?: (order: Order) => void;
@@ -12,6 +13,7 @@ interface OrderTrackingModalProps {
 }
 
 export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
+  isOpen = true,
   order: initialOrder,
   onClose,
   onOrderUpdated,
@@ -24,10 +26,20 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
 
   // Sinkronkan state lokal jika props berubah
   useEffect(() => {
-    if (initialOrder) {
-      setOrder(initialOrder);
-    }
+    setOrder(initialOrder);
   }, [initialOrder]);
+
+  // Handle tombol ESC pada keyboard
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Fungsi fetch status pesanan terkini dari server
   const fetchLatestStatus = useCallback(async (showSpin = false) => {
@@ -100,7 +112,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
     };
   }, [fetchLatestStatus]);
 
-  if (!order) return null;
+  if (!isOpen || !order) return null;
 
   const steps: { key: OrderStatus; label: string; desc: string; icon: React.ReactNode }[] = [
     {
@@ -197,9 +209,16 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
             aria-label="Tutup status pesanan"
-            className="p-2 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
+            className="p-2 sm:p-2.5 rounded-full bg-black/20 hover:bg-black/35 active:scale-90 text-white flex items-center justify-center transition-all cursor-pointer shadow-md border border-white/20 touch-manipulation relative z-20 shrink-0"
           >
             <X className="w-5 h-5 stroke-[2.5]" />
           </button>
@@ -564,14 +583,21 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
             )}
 
             {/* Tombol Tutup Cadangan di Bawah */}
-            <div className="pt-1">
+            <div className="pt-2 pb-1">
               <button
                 type="button"
-                onClick={onClose}
-                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 font-bold py-2.5 px-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  onClose();
+                }}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3.5 px-4 rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer shadow-lg touch-manipulation"
               >
-                <X className="w-4 h-4" />
-                <span>Tutup Jendela Status Pesanan</span>
+                <X className="w-4 h-4 stroke-[2.5]" />
+                <span>✕ Tutup & Kembali Belanja</span>
               </button>
             </div>
           </div>
