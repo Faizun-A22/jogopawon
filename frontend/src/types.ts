@@ -42,6 +42,8 @@ export interface Product {
   is_popular: boolean;
   po_batch: string; // "Panen Subuh Besok"
   variants?: ProductVariant[];
+  allow_custom_budget?: boolean; // Izinkan beli eceran sesuai budget bebas (misal Rp 2.000)
+  min_custom_budget?: number; // Minimal nominal budget (default Rp 1.000 atau Rp 2.000)
 }
 
 export interface DeliverySlot {

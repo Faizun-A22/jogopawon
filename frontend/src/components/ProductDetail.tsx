@@ -71,6 +71,12 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   // Stepper quantity for detail page
   const [orderQuantity, setOrderQuantity] = useState(1);
 
+  // Custom Budget Mode (e.g. Sawi Rp 2.000 walau 1 ikat Rp 5.000)
+  const isCustomBudgetAllowed = Boolean(product.allow_custom_budget);
+  const minBudget = product.min_custom_budget || 1000;
+  const [isCustomBudgetMode, setIsCustomBudgetMode] = useState<boolean>(false);
+  const [customBudgetAmount, setCustomBudgetAmount] = useState<number>(minBudget);
+
   // Selected variant state (e.g. 1 Ons, 1/4 kg, 1/2 kg, 3/4 kg, 1 kg)
   // Wajib tidak aktif otomatis di awal! User harus klik sendiri varian yang diinginkan.
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
@@ -78,6 +84,8 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   useEffect(() => {
     setSelectedVariant(null);
     setOrderQuantity(1);
+    setIsCustomBudgetMode(false);
+    setCustomBudgetAmount(product.min_custom_budget || 1000);
   }, [product]);
 
   // Media gallery list (photos & videos)
@@ -107,26 +115,48 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   const activeMedia = mediaList[activeMediaIndex] || { type: 'image', url: product.image_url };
 
   const hasVariants = Boolean(product.variants && product.variants.length > 0);
-  const isVariantMissing = hasVariants && !selectedVariant;
+  const isVariantMissing = !isCustomBudgetMode && hasVariants && !selectedVariant;
 
   const variantPrices = hasVariants ? product.variants!.map((v) => v.price) : [];
   const minVariantPrice = variantPrices.length > 0 ? Math.min(...variantPrices) : (product.discount_price || product.price);
   const maxVariantPrice = variantPrices.length > 0 ? Math.max(...variantPrices) : (product.discount_price || product.price);
 
-  const unitPrice = selectedVariant
-    ? selectedVariant.price
-    : (product.discount_price || product.price);
+  // Unit price logic:
+  // Jika custom budget aktif, harga = customBudgetAmount
+  const baseProductPrice = product.discount_price || product.price;
+  const baseCostPrice = product.cost_price > 0 ? product.cost_price : baseProductPrice * 0.7;
+
+  const unitPrice = isCustomBudgetMode
+    ? customBudgetAmount
+    : (selectedVariant ? selectedVariant.price : baseProductPrice);
 
   // Total price multiplied by selected quantity (bagian hijau)
-  const totalPrice = unitPrice * orderQuantity;
+  const totalPrice = isCustomBudgetMode ? customBudgetAmount * orderQuantity : unitPrice * orderQuantity;
 
   const activePrice = unitPrice;
-  const activeCost = selectedVariant
-    ? selectedVariant.cost_price
-    : (product.cost_price > 0 ? product.cost_price : activePrice * 0.7);
+  // Proporsional modal jika custom budget:
+  const activeCost = isCustomBudgetMode
+    ? (baseProductPrice > 0 ? (baseCostPrice * (customBudgetAmount / baseProductPrice)) : customBudgetAmount * 0.7)
+    : (selectedVariant ? selectedVariant.cost_price : baseCostPrice);
+
   const activeProfit = Math.max(0, activePrice - activeCost);
   const singlePoints = Math.max(0, Math.floor(activeProfit * 0.07));
   const activePoints = singlePoints * orderQuantity;
+
+  // Proporsi porsi ikat / porsi piring jika custom budget:
+  const customProportion = baseProductPrice > 0 ? (customBudgetAmount / baseProductPrice) : 1;
+  const customProportionText = (() => {
+    const unitLower = (product.unit || '').toLowerCase();
+    if (unitLower.includes('ikat')) {
+      const porsi = Math.round(customProportion * 10) / 10;
+      return `Setara ±${porsi} ikat (${Math.round(customProportion * 100)}% porsi ikat)`;
+    }
+    if (unitLower.includes('kg')) {
+      const gram = Math.round(customProportion * 1000);
+      return `Setara ±${gram} gram`;
+    }
+    return `Setara ${Math.round(customProportion * 100)}% porsi standar ${product.unit}`;
+  })();
 
   const maxAllowedQty = (() => {
     if (product.stock <= 0) return 99;
@@ -501,7 +531,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {product.variants.map((v) => {
-                      const isSelected = selectedVariant?.id === v.id;
+                      const isSelected = !isCustomBudgetMode && selectedVariant?.id === v.id;
                       const vProfit = v.price - v.cost_price;
                       const vPoints = Math.max(0, Math.floor(vProfit * 0.07));
 
@@ -509,7 +539,10 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                         <button
                           key={v.id}
                           type="button"
-                          onClick={() => setSelectedVariant(v)}
+                          onClick={() => {
+                            setIsCustomBudgetMode(false);
+                            setSelectedVariant(v);
+                          }}
                           className={`p-2.5 rounded-2xl border text-left transition-all relative cursor-pointer ${
                             isSelected
                               ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/30 shadow-xs'
@@ -534,6 +567,112 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Custom Budget Mode Selector (Beli Ecer Sesuai Budget Bebas) */}
+              {isCustomBudgetAllowed && (
+                <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                      <span>💡 Pilihan Pembelian:</span>
+                    </span>
+                    <span className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
+                      Bisa Beli Ecer Budget
+                    </span>
+                  </div>
+
+                  {/* Mode Tabs */}
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomBudgetMode(false)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${
+                        !isCustomBudgetMode
+                          ? 'bg-white text-slate-900 shadow-2xs'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {hasVariants ? 'Pilih Varian Timbangan' : `Beli Satuan (${product.unit})`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomBudgetMode(true);
+                        setSelectedVariant(null);
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                        isCustomBudgetMode
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-emerald-700'
+                      }`}
+                    >
+                      <span>🥗 Beli Sesuai Budget (Rp)</span>
+                    </button>
+                  </div>
+
+                  {/* Custom Budget Input Box */}
+                  {isCustomBudgetMode && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-3.5 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-300 rounded-2xl space-y-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold text-amber-950">
+                          Ketik Nominal Budget Anda:
+                        </label>
+                        <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                          Min. {formatRupiah(minBudget)}
+                        </span>
+                      </div>
+
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">
+                          Rp
+                        </span>
+                        <input
+                          type="number"
+                          step="500"
+                          min={minBudget}
+                          value={customBudgetAmount || ''}
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value));
+                            setCustomBudgetAmount(val);
+                          }}
+                          placeholder={minBudget.toString()}
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-base text-slate-900 focus:outline-emerald-600 shadow-2xs"
+                        />
+                      </div>
+
+                      {/* Quick preset chips */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-amber-900 font-bold mr-1">Contoh Cepat:</span>
+                        {[1000, 2000, 3000, 5000].filter((b) => b >= minBudget).map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => setCustomBudgetAmount(chip)}
+                            className={`text-[11px] font-black px-2.5 py-1 rounded-lg border transition-all ${
+                              customBudgetAmount === chip
+                                ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs'
+                                : 'bg-white hover:bg-amber-100 text-amber-900 border-amber-200'
+                            }`}
+                          >
+                            {formatRupiah(chip)}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Estimasi porsi / takaran ikat */}
+                      <div className="p-2 bg-white/80 rounded-xl border border-amber-200 text-xs flex items-center justify-between">
+                        <span className="text-[11px] text-slate-600 font-medium">Estimasi Takaran:</span>
+                        <span className="text-[11px] font-black text-emerald-800">
+                          {customProportionText}
+                        </span>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               )}
 
@@ -630,15 +769,24 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                       handleVariantMissingAlert();
                       return;
                     }
+                    const variantToPass: ProductVariant | undefined = isCustomBudgetMode
+                      ? {
+                          id: `budget_${customBudgetAmount}`,
+                          name: `Porsi Budget Rp ${customBudgetAmount.toLocaleString('id-ID')} (${customProportionText})`,
+                          price: customBudgetAmount,
+                          cost_price: Math.round(activeCost),
+                        }
+                      : (selectedVariant || undefined);
+
                     if (!currentUser) {
                       onRequireAuth?.(() => {
-                        onAddToCart(product, orderQuantity, selectedVariant || undefined);
-                        triggerToast(`${orderQuantity}x ${product.name} ${selectedVariant ? `(${selectedVariant.name})` : ''} dimasukkan ke keranjang!`);
+                        onAddToCart(product, orderQuantity, variantToPass);
+                        triggerToast(`${orderQuantity}x ${product.name} ${variantToPass ? `(${variantToPass.name})` : ''} dimasukkan ke keranjang!`);
                       });
                       return;
                     }
-                    onAddToCart(product, orderQuantity, selectedVariant || undefined);
-                    triggerToast(`${orderQuantity}x ${product.name} ${selectedVariant ? `(${selectedVariant.name})` : ''} dimasukkan ke keranjang!`);
+                    onAddToCart(product, orderQuantity, variantToPass);
+                    triggerToast(`${orderQuantity}x ${product.name} ${variantToPass ? `(${variantToPass.name})` : ''} dimasukkan ke keranjang!`);
                   }}
                   className={`flex-1 border font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 transition-all text-sm ${
                     isVariantMissing
@@ -659,11 +807,20 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                       handleVariantMissingAlert();
                       return;
                     }
+                    const variantToPass: ProductVariant | undefined = isCustomBudgetMode
+                      ? {
+                          id: `budget_${customBudgetAmount}`,
+                          name: `Porsi Budget Rp ${customBudgetAmount.toLocaleString('id-ID')} (${customProportionText})`,
+                          price: customBudgetAmount,
+                          cost_price: Math.round(activeCost),
+                        }
+                      : (selectedVariant || undefined);
+
                     if (!currentUser) {
-                      onRequireAuth?.(() => onBuyNow(product, orderQuantity, selectedVariant || undefined));
+                      onRequireAuth?.(() => onBuyNow(product, orderQuantity, variantToPass));
                       return;
                     }
-                    onBuyNow(product, orderQuantity, selectedVariant || undefined);
+                    onBuyNow(product, orderQuantity, variantToPass);
                   }}
                   className={`flex-1 font-extrabold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all text-sm ${
                     isVariantMissing
@@ -1137,15 +1294,24 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 handleVariantMissingAlert();
                 return;
               }
+              const variantToPass: ProductVariant | undefined = isCustomBudgetMode
+                ? {
+                    id: `budget_${customBudgetAmount}`,
+                    name: `Porsi Budget Rp ${customBudgetAmount.toLocaleString('id-ID')} (${customProportionText})`,
+                    price: customBudgetAmount,
+                    cost_price: Math.round(activeCost),
+                  }
+                : (selectedVariant || undefined);
+
               if (!currentUser) {
                 onRequireAuth?.(() => {
-                  onAddToCart(product, orderQuantity, selectedVariant || undefined);
-                  triggerToast(`${orderQuantity}x ${product.name} ${selectedVariant ? `(${selectedVariant.name})` : ''} dimasukkan ke keranjang!`);
+                  onAddToCart(product, orderQuantity, variantToPass);
+                  triggerToast(`${orderQuantity}x ${product.name} ${variantToPass ? `(${variantToPass.name})` : ''} dimasukkan ke keranjang!`);
                 });
                 return;
               }
-              onAddToCart(product, orderQuantity, selectedVariant || undefined);
-              triggerToast(`${orderQuantity}x ${product.name} ${selectedVariant ? `(${selectedVariant.name})` : ''} dimasukkan ke keranjang!`);
+              onAddToCart(product, orderQuantity, variantToPass);
+              triggerToast(`${orderQuantity}x ${product.name} ${variantToPass ? `(${variantToPass.name})` : ''} dimasukkan ke keranjang!`);
             }}
             className={`flex-1 border font-bold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center gap-1 transition-all ${
               isVariantMissing
@@ -1165,11 +1331,20 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                 handleVariantMissingAlert();
                 return;
               }
+              const variantToPass: ProductVariant | undefined = isCustomBudgetMode
+                ? {
+                    id: `budget_${customBudgetAmount}`,
+                    name: `Porsi Budget Rp ${customBudgetAmount.toLocaleString('id-ID')} (${customProportionText})`,
+                    price: customBudgetAmount,
+                    cost_price: Math.round(activeCost),
+                  }
+                : (selectedVariant || undefined);
+
               if (!currentUser) {
-                onRequireAuth?.(() => onBuyNow(product, orderQuantity, selectedVariant || undefined));
+                onRequireAuth?.(() => onBuyNow(product, orderQuantity, variantToPass));
                 return;
               }
-              onBuyNow(product, orderQuantity, selectedVariant || undefined);
+              onBuyNow(product, orderQuantity, variantToPass);
             }}
             className={`flex-1 font-extrabold py-2.5 px-2 rounded-xl text-xs flex items-center justify-center shadow-md transition-all ${
               isVariantMissing

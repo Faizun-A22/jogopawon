@@ -74,6 +74,8 @@ type Product struct {
 	IsPopular     bool             `json:"is_popular"`
 	POBatch       string           `json:"po_batch"` // e.g. "Panen Besok Subuh"
 	Variants      []ProductVariant `json:"variants,omitempty"`
+	AllowCustomBudget bool         `json:"allow_custom_budget"`
+	MinCustomBudget   float64      `json:"min_custom_budget"`
 }
 
 type DeliverySlot struct {
@@ -1797,6 +1799,15 @@ func calculateStockDeduction(prod Product, item OrderItem) float64 {
 	// Jika produk bersatuan Ons
 	if isOns && variantWeightG > 0 {
 		return (float64(variantWeightG) * float64(item.Quantity)) / 100.0
+	}
+
+	// Jika pesanan adalah pembelian porsi custom budget (contoh: "Porsi Budget Rp 2.000"):
+	// Kurangi stok secara proporsional sesuai perbandingan harga item dengan harga produk satuan
+	if strings.Contains(strings.ToLower(item.VariantName), "budget") || strings.Contains(strings.ToLower(item.VariantName), "custom") {
+		if prod.Price > 0 {
+			proportion := (item.Price * float64(item.Quantity)) / prod.Price
+			return math.Round(proportion*100) / 100
+		}
 	}
 
 	// Untuk satuan diskrit (ikat, biji, buah, pack, kotak, butir, dus, botol, dll)
@@ -5540,6 +5551,8 @@ func main() {
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS videos TEXT[] DEFAULT '{}';
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12, 2) DEFAULT 0;
+				ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_custom_budget BOOLEAN DEFAULT false;
+				ALTER TABLE products ADD COLUMN IF NOT EXISTS min_custom_budget NUMERIC(12, 2) DEFAULT 1000;
 				ALTER TABLE products ALTER COLUMN stock TYPE NUMERIC(10, 2) USING stock::NUMERIC(10, 2);`
 				if _, execErr := db.Exec(initProductsSQL); execErr != nil {
 					log.Printf("[Warning] Gagal inisialisasi tabel products: %v\n", execErr)

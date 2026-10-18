@@ -238,6 +238,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newProdCost, setNewProdCost] = useState<number>(0);
   const [newProdUnit, setNewProdUnit] = useState('');
   const [newProdStock, setNewProdStock] = useState<number>(0);
+  const [newProdAllowCustomBudget, setNewProdAllowCustomBudget] = useState<boolean>(false);
+  const [newProdMinCustomBudget, setNewProdMinCustomBudget] = useState<number>(1000);
   const [newProdFreshness, setNewProdFreshness] = useState('Segar');
   const [newProdOrigin, setNewProdOrigin] = useState('');
   const [newProdDesc, setNewProdDesc] = useState('');
@@ -551,12 +553,16 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
       is_flash_sale: false,
       is_popular: true,
       po_batch: 'Panen Subuh Besok',
+      allow_custom_budget: newProdAllowCustomBudget,
+      min_custom_budget: newProdMinCustomBudget,
     });
     setIsAddProductOpen(false);
     setNewProdName('');
     setNewProdImg('');
     setNewProdImages([]);
     setNewProdVideos([]);
+    setNewProdAllowCustomBudget(false);
+    setNewProdMinCustomBudget(1000);
   };
 
   const handleMediaUpload = async (files: FileList | File[], isEdit: boolean = false) => {
@@ -4643,6 +4649,44 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                 </div>
               </div>
 
+              {/* Toggle Pembelian Nominal Bebas (Custom Budget) */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-xs text-amber-950 flex items-center gap-1.5 cursor-pointer">
+                      <span>🥗 Izinkan Pembelian Custom Budget (Nominal Bebas)</span>
+                    </label>
+                    <p className="text-[10px] text-amber-800/80">
+                      Pelanggan bisa beli ecer nominal sendiri (misal: Sawi Rp 2.000 walau 1 ikat Rp 5.000)
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={newProdAllowCustomBudget}
+                    onChange={(e) => setNewProdAllowCustomBudget(e.target.checked)}
+                    className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                  />
+                </div>
+
+                {newProdAllowCustomBudget && (
+                  <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-semibold text-amber-900">
+                      Minimal Pembelian Bebas (Rp):
+                    </span>
+                    <div className="w-32">
+                      <input
+                        type="number"
+                        min="500"
+                        step="500"
+                        value={newProdMinCustomBudget}
+                        onChange={(e) => setNewProdMinCustomBudget(Number(e.target.value))}
+                        className="w-full p-1.5 text-xs border border-amber-300 rounded-lg bg-white font-bold text-right"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="font-bold block text-xs text-slate-800">Foto & Video Produk (Cloudflare R2)</label>
@@ -4947,6 +4991,44 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                     {editingProduct.stock} {editingProduct.unit}
                   </span>
                 </div>
+              </div>
+
+              {/* Toggle Pembelian Nominal Bebas (Custom Budget) */}
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="font-bold text-xs text-amber-950 flex items-center gap-1.5 cursor-pointer">
+                      <span>🥗 Izinkan Pembelian Custom Budget (Nominal Bebas)</span>
+                    </label>
+                    <p className="text-[10px] text-amber-800/80">
+                      Pelanggan bisa beli ecer nominal sendiri (misal: Sawi Rp 2.000 walau 1 ikat Rp 5.000)
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={editingProduct.allow_custom_budget || false}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, allow_custom_budget: e.target.checked })}
+                    className="w-4 h-4 accent-emerald-600 rounded cursor-pointer"
+                  />
+                </div>
+
+                {editingProduct.allow_custom_budget && (
+                  <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-semibold text-amber-900">
+                      Minimal Pembelian Bebas (Rp):
+                    </span>
+                    <div className="w-32">
+                      <input
+                        type="number"
+                        min="500"
+                        step="500"
+                        value={editingProduct.min_custom_budget ?? 1000}
+                        onChange={(e) => setEditingProduct({ ...editingProduct, min_custom_budget: Number(e.target.value) })}
+                        className="w-full p-1.5 text-xs border border-amber-300 rounded-lg bg-white font-bold text-right"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* R2 Media Section for Edit Product */}
