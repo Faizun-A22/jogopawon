@@ -184,6 +184,9 @@ export interface UserAddress {
   address: string;
   landmark?: string; // Patokan rumah (e.g. "Pagar hitam depan musholla")
   house_photo_url?: string; // Foto rumah / pagar depan
+  latitude?: number; // Titik GPS latitude
+  longitude?: number; // Titik GPS longitude
+  maps_url?: string; // Link langsung Google Maps navigasi
   is_primary: boolean;
 }
 

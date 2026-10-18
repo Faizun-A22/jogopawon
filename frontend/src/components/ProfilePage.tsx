@@ -51,6 +51,8 @@ import {
   Share2,
   Users,
   X,
+  Compass,
+  Crosshair,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -355,6 +357,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [modalAddress, setModalAddress] = useState('');
   const [modalLandmark, setModalLandmark] = useState('');
   const [modalHousePhoto, setModalHousePhoto] = useState('');
+  const [modalLat, setModalLat] = useState<number | undefined>(undefined);
+  const [modalLng, setModalLng] = useState<number | undefined>(undefined);
+  const [isLocatingGPS, setIsLocatingGPS] = useState(false);
+  const [gpsStatusMessage, setGpsStatusMessage] = useState<string | null>(null);
   const [modalIsPrimary, setModalIsPrimary] = useState(false);
   const [isUploadingModalPhoto, setIsUploadingModalPhoto] = useState(false);
   const modalPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -375,6 +381,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setModalAddress('');
     setModalLandmark('');
     setModalHousePhoto('');
+    setModalLat(undefined);
+    setModalLng(undefined);
+    setGpsStatusMessage(null);
     setModalIsPrimary(savedAddresses.length === 0);
     setAddressFormErrors({});
     setIsAddressModalOpen(true);
@@ -388,9 +397,71 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setModalAddress(addr.address || '');
     setModalLandmark(addr.landmark || '');
     setModalHousePhoto(addr.house_photo_url || '');
+    setModalLat(addr.latitude);
+    setModalLng(addr.longitude);
+    setGpsStatusMessage(addr.latitude && addr.longitude ? `Titik GPS tersimpan (${addr.latitude.toFixed(5)}, ${addr.longitude.toFixed(5)})` : null);
     setModalIsPrimary(Boolean(addr.is_primary));
     setAddressFormErrors({});
     setIsAddressModalOpen(true);
+  };
+
+  // Ambil Titik Lokasi GPS Otomatis dari HP / Browser
+  const handleGetGPSLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Browser atau perangkat Anda belum mendukung deteksi GPS.');
+      return;
+    }
+
+    setIsLocatingGPS(true);
+    setGpsStatusMessage('Mengakses sinyal GPS perangkat Anda...');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setModalLat(lat);
+        setModalLng(lng);
+        setGpsStatusMessage(`✅ Titik GPS Terkunci: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+
+        // Reverse Geocoding (OpenStreetMap Nominatim) untuk mengisi alamat otomatis jika masih kosong / singkat
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'id-ID,id;q=0.9' } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.display_name) {
+              const road = data.address?.road || data.address?.suburb || '';
+              const village = data.address?.village || data.address?.neighbourhood || '';
+              const city = data.address?.city || data.address?.county || 'Pasuruan';
+              const cleanAddr = [road, village, city].filter(Boolean).join(', ');
+
+              if (!modalAddress.trim() && cleanAddr) {
+                setModalAddress(cleanAddr);
+                if (addressFormErrors.address) {
+                  setAddressFormErrors((prev) => ({ ...prev, address: '' }));
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Reverse geocoding skip:', err);
+        } finally {
+          setIsLocatingGPS(false);
+        }
+      },
+      (err) => {
+        setIsLocatingGPS(false);
+        console.warn('GPS Error:', err);
+        if (err.code === 1) {
+          setGpsStatusMessage('Izin akses lokasi ditolak. Silakan izinkan lokasi di pengaturan browser.');
+        } else {
+          setGpsStatusMessage('Gagal mengambil sinyal GPS. Pastikan GPS HP aktif.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+    );
   };
 
   const handleModalPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -467,6 +538,10 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
 
     const willBePrimary = modalIsPrimary || savedAddresses.length === 0;
 
+    const computedMapsUrl = modalLat && modalLng
+      ? `https://www.google.com/maps/search/?api=1&query=${modalLat},${modalLng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(modalAddress.trim() + ' Pasuruan')}`;
+
     let updatedList: UserAddress[];
     if (editingAddressId) {
       updatedList = savedAddresses.map((addr) => {
@@ -479,6 +554,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
             address: modalAddress.trim(),
             landmark: modalLandmark.trim(),
             house_photo_url: modalHousePhoto.trim(),
+            latitude: modalLat,
+            longitude: modalLng,
+            maps_url: computedMapsUrl,
             is_primary: willBePrimary,
           };
         }
@@ -493,6 +571,9 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         address: modalAddress.trim(),
         landmark: modalLandmark.trim(),
         house_photo_url: modalHousePhoto.trim(),
+        latitude: modalLat,
+        longitude: modalLng,
+        maps_url: computedMapsUrl,
         is_primary: willBePrimary,
       };
       if (willBePrimary) {
@@ -1432,6 +1513,19 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               <Edit2 className="w-3.5 h-3.5 text-slate-500" />
                               <span>Ubah Alamat</span>
                             </button>
+                            <a
+                              href={
+                                addr.latitude && addr.longitude
+                                  ? `https://www.google.com/maps/search/?api=1&query=${addr.latitude},${addr.longitude}`
+                                  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr.address + ' Pasuruan')}`
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-bold px-3 py-1.5 rounded-xl transition-all inline-flex items-center gap-1.5 cursor-pointer active:scale-95"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Buka Google Maps</span>
+                            </a>
                             <button
                               type="button"
                               onClick={() => handleDeleteAddress(addr.id)}
@@ -1661,6 +1755,49 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               : 'border-slate-200 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 bg-slate-50 focus:bg-white text-slate-900'
                           }`}
                         />
+
+                        {/* GPS Location & Maps Pin Button */}
+                        <div className="mt-2 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleGetGPSLocation}
+                              disabled={isLocatingGPS}
+                              className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-50 shadow-2xs"
+                            >
+                              <Crosshair className={`w-3.5 h-3.5 text-emerald-600 ${isLocatingGPS ? 'animate-spin' : ''}`} />
+                              <span>{isLocatingGPS ? 'Mencari Titik GPS...' : '📍 Ambil Titik Lokasi Saya (GPS HP)'}</span>
+                            </button>
+
+                            {(modalLat && modalLng) ? (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${modalLat},${modalLng}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all border border-slate-200 cursor-pointer shadow-2xs"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Cek Pin di Google Maps</span>
+                              </a>
+                            ) : modalAddress.trim().length > 3 ? (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(modalAddress.trim() + ' Pasuruan')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all border border-slate-200 cursor-pointer shadow-2xs"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Cek Alamat di Maps</span>
+                              </a>
+                            ) : null}
+                          </div>
+
+                          {gpsStatusMessage && (
+                            <p className="text-[11px] text-emerald-800 font-semibold bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/80 flex items-center gap-1.5">
+                              <span>{gpsStatusMessage}</span>
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       {/* Patokan Rumah / Catatan Kurir Subuh */}

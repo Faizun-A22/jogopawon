@@ -234,9 +234,12 @@ export const CartPage: React.FC<CartPageProps> = ({
         };
       });
 
-      const finalNote = activeAddress.landmark
-        ? (deliveryNote.trim() ? `${activeAddress.landmark} | Catatan: ${deliveryNote.trim()}` : activeAddress.landmark)
-        : deliveryNote.trim();
+      const gpsNote = activeAddress.latitude && activeAddress.longitude
+        ? `[GPS: ${activeAddress.latitude.toFixed(5)},${activeAddress.longitude.toFixed(5)}]`
+        : '';
+
+      const noteParts = [activeAddress.landmark, deliveryNote.trim(), gpsNote].filter(Boolean);
+      const finalNote = noteParts.join(' | ');
 
       const orderData: Partial<Order> = {
         customer_name: (activeAddress.recipient_name || customerName || currentUser.name).trim(),
@@ -695,6 +698,21 @@ export const CartPage: React.FC<CartPageProps> = ({
                           <span><strong>Patokan Rumah:</strong> {activeAddress.landmark}</span>
                         </p>
                       )}
+                      <div>
+                        <a
+                          href={
+                            activeAddress.latitude && activeAddress.longitude
+                              ? `https://www.google.com/maps/search/?api=1&query=${activeAddress.latitude},${activeAddress.longitude}`
+                              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activeAddress.address + ' Pasuruan')}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 px-2.5 py-1 rounded-xl transition-all shadow-2xs"
+                        >
+                          <ExternalLink className="w-3 h-3 text-emerald-600" />
+                          <span>{activeAddress.latitude && activeAddress.longitude ? '📍 Titik GPS Akurat (Cek Maps)' : '🗺️ Cek Lokasi di Google Maps'}</span>
+                        </a>
+                      </div>
                     </div>
 
                     {/* Foto Rumah Thumbnail Kurir Subuh */}

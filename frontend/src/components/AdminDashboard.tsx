@@ -6482,15 +6482,25 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                 )}
 
                 {/* Tombol Google Maps */}
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedOrderForAddressModal.delivery_address + ' Pasuruan')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer w-full shadow-2xs"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Buka Lokasi di Google Maps</span>
-                </a>
+                {(() => {
+                  const noteText = selectedOrderForAddressModal.delivery_note || '';
+                  const gpsMatch = noteText.match(/\[GPS:\s*(-?\d+\.\d+),\s*(-?\d+\.\d+)\]/);
+                  const mapsQuery = gpsMatch
+                    ? `${gpsMatch[1]},${gpsMatch[2]}`
+                    : encodeURIComponent(selectedOrderForAddressModal.delivery_address + ' Pasuruan');
+
+                  return (
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-black text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer w-full shadow-2xs active:scale-98"
+                    >
+                      <ExternalLink className="w-4 h-4 text-emerald-600" />
+                      <span>{gpsMatch ? '📍 Buka Titik GPS Akurat di Google Maps' : '🗺️ Buka Alamat di Google Maps'}</span>
+                    </a>
+                  );
+                })()}
               </div>
 
               {/* SECTION 4: FOTO TAMPAK DEPAN RUMAH (Panduan Kurir) */}
