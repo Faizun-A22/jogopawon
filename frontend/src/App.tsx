@@ -1047,6 +1047,7 @@ export const App: React.FC = () => {
               onBack={() => navigateToTab('home')}
               onGoToCatalog={() => navigateToTab('catalog')}
               onGoToProfileAddress={handleGoToProfileAddress}
+              onOpenOrderHistory={() => setIsOrderHistoryModalOpen(true)}
             />
           )}
 
@@ -1548,6 +1549,7 @@ export const App: React.FC = () => {
         currentUser={currentUser}
         onRequireAuth={triggerRequireAuth}
         onGoToProfileAddress={handleGoToProfileAddress}
+        onOpenOrderHistory={() => setIsOrderHistoryModalOpen(true)}
       />
 
       {/* Instant WhatsApp Order Confirmation Modal */}

@@ -26,6 +26,7 @@ import {
   Camera,
   Navigation,
   AlertCircle,
+  Receipt,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
@@ -43,6 +44,7 @@ interface CartModalProps {
   currentUser?: User | null;
   onRequireAuth?: () => void;
   onGoToProfileAddress?: () => void;
+  onOpenOrderHistory?: () => void;
 }
 
 export const CartModal: React.FC<CartModalProps> = ({
@@ -58,6 +60,7 @@ export const CartModal: React.FC<CartModalProps> = ({
   currentUser,
   onRequireAuth,
   onGoToProfileAddress,
+  onOpenOrderHistory,
 }) => {
   const todayDate = new Date().toISOString().split('T')[0];
   const tomorrowDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -312,12 +315,29 @@ export const CartModal: React.FC<CartModalProps> = ({
               <p className="text-[11px] text-slate-500">{cart.length} jenis produk dipilih</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenOrderHistory && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenOrderHistory();
+                }}
+                className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                title="Buka Riwayat Pesanan Saya"
+              >
+                <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="text-[11px]">Riwayat</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}
@@ -363,6 +383,21 @@ export const CartModal: React.FC<CartModalProps> = ({
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
                 Yuk pilih sembako, sayur segar, lauk pauk, atau kebutuhan rumah tangga favorit Anda!
               </p>
+              {onOpenOrderHistory && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenOrderHistory();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold rounded-2xl text-xs transition-colors cursor-pointer"
+                  >
+                    <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Lihat Riwayat Pesanan Saya</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-2.5">

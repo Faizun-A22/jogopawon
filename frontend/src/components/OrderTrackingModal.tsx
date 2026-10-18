@@ -196,11 +196,17 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
           <button
             type="button"
             onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               onClose();
             }}
             aria-label="Tutup status pesanan"
-            className="w-10 h-10 -mr-1 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs"
+            className="w-10 h-10 -mr-1 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer shadow-xs select-none touch-manipulation"
           >
             <X className="w-6 h-6 stroke-[2.5]" />
           </button>
@@ -563,6 +569,18 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
                 </button>
               </div>
             )}
+
+            {/* Tombol Tutup Cadangan di Bawah */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 font-bold py-2.5 px-3 rounded-2xl text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                <span>Tutup Jendela Status Pesanan</span>
+              </button>
+            </div>
           </div>
         </div>
       </motion.div>

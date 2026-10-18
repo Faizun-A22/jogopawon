@@ -26,6 +26,8 @@ import {
   ExternalLink,
   Camera,
   Navigation,
+  Receipt,
+  Package,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -42,6 +44,7 @@ interface CartPageProps {
   onBack: () => void;
   onGoToCatalog: () => void;
   onGoToProfileAddress?: () => void;
+  onOpenOrderHistory?: () => void;
 }
 
 export const CartPage: React.FC<CartPageProps> = ({
@@ -57,6 +60,7 @@ export const CartPage: React.FC<CartPageProps> = ({
   onBack,
   onGoToCatalog,
   onGoToProfileAddress,
+  onOpenOrderHistory,
 }) => {
   const todayDate = new Date().toISOString().split('T')[0];
   const tomorrowDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -289,16 +293,30 @@ export const CartPage: React.FC<CartPageProps> = ({
               </p>
             </div>
           </div>
-          {cart.length > 0 && (
-            <button
-              type="button"
-              onClick={onClearCart}
-              className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 px-2.5 py-1 rounded-xl hover:bg-rose-50 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Kosongkan</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {onOpenOrderHistory && (
+              <button
+                type="button"
+                onClick={onOpenOrderHistory}
+                className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+                title="Buka Riwayat Pesanan Saya"
+              >
+                <Receipt className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="hidden xs:inline sm:inline">Riwayat Pesanan</span>
+                <span className="xs:hidden sm:hidden">Riwayat</span>
+              </button>
+            )}
+            {cart.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearCart}
+                className="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-rose-50 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Kosongkan</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -341,14 +359,26 @@ export const CartPage: React.FC<CartPageProps> = ({
                 Yuk isi dengan aneka sayur segar petik subuh, sembako murah, lauk, dan bumbu dapur langsung ke pawon Anda!
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onGoToCatalog}
-              className="bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white text-xs sm:text-sm font-bold px-6 py-3 rounded-2xl shadow-md transition-all inline-flex items-center gap-2"
-            >
-              <ShoppingBag className="w-4 h-4" />
-              <span>Buka Katalog Belanja Sayur</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onGoToCatalog}
+                className="bg-emerald-700 hover:bg-emerald-800 active:scale-98 text-white text-xs sm:text-sm font-bold px-6 py-3 rounded-2xl shadow-md transition-all inline-flex items-center gap-2 cursor-pointer"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                <span>Buka Katalog Belanja Sayur</span>
+              </button>
+              {onOpenOrderHistory && (
+                <button
+                  type="button"
+                  onClick={onOpenOrderHistory}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 active:scale-98 text-xs sm:text-sm font-bold px-5 py-3 rounded-2xl border border-slate-200 transition-all inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <Receipt className="w-4 h-4 text-emerald-700" />
+                  <span>Lihat Riwayat Pesanan</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
