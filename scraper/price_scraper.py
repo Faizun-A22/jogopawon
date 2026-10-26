@@ -464,7 +464,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_wt_01",
                 "commodity_name": "Wortel Manis Dataran Tinggi Tosari Bromo",
-                "category": "Sayur & Buah",
+                "category": "Sayuran Segar",
                 "price": 8000.0,
                 "unit": "kg",
                 "supplier_name": "Mas Trisno (Kebun Sayur Lereng Bromo)",
@@ -484,7 +484,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_tm_01",
                 "commodity_name": "Tomat Buah Servo Merah Super Petik Subuh",
-                "category": "Sayur & Buah",
+                "category": "Sayuran Segar",
                 "price": 3800.0,
                 "unit": "kg",
                 "supplier_name": "Cak Mat (Petani Sayur Nongkojajar)",
@@ -504,7 +504,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_wt_02",
                 "commodity_name": "Wortel Bromo Super Karangketug",
-                "category": "Sayur & Buah",
+                "category": "Sayuran Segar",
                 "price": 9000.0,
                 "unit": "kg",
                 "supplier_name": "Lapak Umbi & Sayur Bu Nanik (Pasar Karangketug)",
@@ -526,7 +526,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_tl_01",
                 "commodity_name": "Telur Ayam Negeri Segar Turun Kandang Purwosari",
-                "category": "Sembako & Beras",
+                "category": "Sembako",
                 "price": 21800.0,
                 "unit": "kg",
                 "supplier_name": "Peternakan Layer Barokah Purwosari",
@@ -546,7 +546,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_tl_02",
                 "commodity_name": "Telur Ayam Segar Partai Krat Pandaan",
-                "category": "Sembako & Beras",
+                "category": "Sembako",
                 "price": 22400.0,
                 "unit": "kg",
                 "supplier_name": "Agen Telur Berkah Jaya Pandaan",
@@ -566,7 +566,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_ay_01",
                 "commodity_name": "Ayam Broiler Karkas Bersih Utuh (~1kg)",
-                "category": "Lauk, Ayam & Daging",
+                "category": "Daging & Lauk Segar",
                 "price": 25500.0,
                 "unit": "ekor",
                 "supplier_name": "RPA Subuh Barokah Sukorejo Pasuruan",
@@ -588,7 +588,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_sy_01",
                 "commodity_name": "Kangkung Hijau Batang Renyah Petik Subuh",
-                "category": "Sayur & Buah",
+                "category": "Sayuran Segar",
                 "price": 1100.0,
                 "unit": "ikat",
                 "supplier_name": "Cak Kholil (Petani Sayur Tutur Nongkojajar)",
@@ -608,7 +608,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_sy_02",
                 "commodity_name": "Bayam Hijau Cabut Segar Masih Berakar",
-                "category": "Sayur & Buah",
+                "category": "Sayuran Segar",
                 "price": 1100.0,
                 "unit": "ikat",
                 "supplier_name": "Cak Kholil (Petani Sayur Tutur Nongkojajar)",
@@ -630,7 +630,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_br_01",
                 "commodity_name": "Beras Premium Rojolele Kemasan 5kg",
-                "category": "Sembako & Beras",
+                "category": "Sembako",
                 "price": 57000.0,
                 "unit": "karung 5kg",
                 "supplier_name": "Penggilingan Padi Sumber Pangan Rembang",
@@ -650,7 +650,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_my_01",
                 "commodity_name": "Minyak Goreng Sawit Pouch 2 Liter Jernih",
-                "category": "Sembako & Beras",
+                "category": "Sembako",
                 "price": 30500.0,
                 "unit": "pouch 2 liter",
                 "supplier_name": "Grosir Sembako Rejeki Bangil",
@@ -670,7 +670,7 @@ class JogoPawonScraperEngine:
             {
                 "id": "py_sc_ds_01",
                 "commodity_name": "Daging Sapi Segar Paha Depan / Rawon",
-                "category": "Lauk, Ayam & Daging",
+                "category": "Daging & Lauk Segar",
                 "price": 49000.0,
                 "unit": "500g",
                 "supplier_name": "RPH Resmi Subuh Berkah Grati Pasuruan",

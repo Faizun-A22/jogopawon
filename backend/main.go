@@ -854,6 +854,29 @@ func (p *Product) NormalizeMedia() {
 	}
 }
 
+func (s *Store) saveCategoriesToDisk() {
+	s.mutex.RLock()
+	copyList := make([]Category, len(s.categories))
+	copy(copyList, s.categories)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "categories.json"), copyList)
+}
+
+func (s *Store) loadCategoriesFromDisk() {
+	filePath := filepath.Join("data", "categories.json")
+	bytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	var loaded []Category
+	if err := json.Unmarshal(bytes, &loaded); err == nil && len(loaded) > 0 {
+		s.mutex.Lock()
+		s.categories = loaded
+		s.mutex.Unlock()
+		log.Printf("[Storage] Berhasil memuat %d kategori dari penyimpanan lokal.\n", len(loaded))
+	}
+}
+
 func (s *Store) loadProductsFromDisk() {
 	filePath := filepath.Join("data", "products.json")
 	bytes, err := os.ReadFile(filePath)
@@ -864,6 +887,25 @@ func (s *Store) loadProductsFromDisk() {
 	if err := json.Unmarshal(bytes, &loaded); err == nil && len(loaded) > 0 {
 		for i := range loaded {
 			loaded[i].NormalizeMedia()
+			nameLower := strings.ToLower(loaded[i].Name)
+			if loaded[i].CategoryID == "cat_sayur" {
+				if strings.Contains(nameLower, "pisang") || strings.Contains(nameLower, "jeruk") ||
+					strings.Contains(nameLower, "apel") || strings.Contains(nameLower, "semangka") ||
+					strings.Contains(nameLower, "melon") || strings.Contains(nameLower, "pepaya") ||
+					strings.Contains(nameLower, "buah") || strings.Contains(nameLower, "mangga") ||
+					strings.Contains(nameLower, "alpukat") || strings.Contains(nameLower, "pir") {
+					loaded[i].CategoryID = "cat_buah"
+				}
+			}
+			if loaded[i].CategoryID == "cat_lauk" || loaded[i].CategoryID == "cat_sayur" {
+				if strings.Contains(nameLower, "sosis") || strings.Contains(nameLower, "nugget") ||
+					strings.Contains(nameLower, "bakso") || strings.Contains(nameLower, "frozen") ||
+					strings.Contains(nameLower, "tempura") || strings.Contains(nameLower, "dimsum") ||
+					strings.Contains(nameLower, "siomay") || strings.Contains(nameLower, "kornet") ||
+					strings.Contains(nameLower, "rolade") {
+					loaded[i].CategoryID = "cat_frozen"
+				}
+			}
 		}
 		s.mutex.Lock()
 		s.products = loaded
@@ -1207,6 +1249,7 @@ func newStore(db *sql.DB) *Store {
 		db: db,
 	}
 	s.seedDefaultData()
+	s.loadCategoriesFromDisk()
 	s.loadProductsFromDisk()
 	s.loadRewardsFromDisk()
 	s.loadRedemptionsFromDisk()
@@ -1461,12 +1504,14 @@ func (s *Store) loadRedemptionsFromDB() {
 
 func (s *Store) seedDefaultData() {
 	s.categories = []Category{
-		{ID: "cat_sembako", Name: "Sembako & Beras", Icon: "Layers", Slug: "sembako", Description: "Beras pulen, minyak goreng, gula, dan telur segar."},
-		{ID: "cat_lauk", Name: "Lauk, Ayam & Daging", Icon: "Soup", Slug: "daging-lauk", Description: "Daging sapi, ayam potong segar, ikan, dan telur siap olah."},
-		{ID: "cat_sayur", Name: "Sayur & Buah", Icon: "Leaf", Slug: "sayur-buah", Description: "Sayuran hijau petik subuh, umbi segar, dan buah-buahan."},
-		{ID: "cat_bumbu", Name: "Bumbu Pawon", Icon: "Flame", Slug: "bumbu-pawon", Description: "Bawang merah, bawang putih, cabai, jahe, dan aneka rempah."},
+		{ID: "cat_sembako", Name: "Sembako", Icon: "Layers", Slug: "sembako", Description: "Beras pulen, minyak goreng, gula pasir, tepung terigu, dan kebutuhan pokok."},
+		{ID: "cat_sayur", Name: "Sayuran Segar", Icon: "Leaf", Slug: "sayuran-segar", Description: "Sayuran hijau petik subuh, umbi segar, dedaunan, dan sayur sop."},
+		{ID: "cat_buah", Name: "Buah-buahan Segar", Icon: "Apple", Slug: "buah-buahan", Description: "Aneka buah segar pilihan manis, kaya vitamin untuk keluarga."},
+		{ID: "cat_lauk", Name: "Daging & Lauk Segar", Icon: "Soup", Slug: "daging-lauk", Description: "Daging sapi, ayam potong segar, ikan segar, tahu, dan tempe."},
+		{ID: "cat_frozen", Name: "Frozen Food & Olahan", Icon: "Package", Slug: "frozen-food", Description: "Sosis, nugget, bakso, kentang beku, dan aneka makanan olahan praktis."},
+		{ID: "cat_bumbu", Name: "Bumbu Pawon", Icon: "Flame", Slug: "bumbu-pawon", Description: "Bawang merah, bawang putih, cabai, jahe, dan aneka rempah dapur."},
 		{ID: "cat_rumah", Name: "Kebutuhan Rumah", Icon: "Layers", Slug: "rumah-tangga", Description: "Sabun cuci piring, deterjen, pasta gigi, dan keperluan sanitasi rumah."},
-		{ID: "cat_minuman", Name: "Minuman & Camilan", Icon: "Apple", Slug: "minuman-snack", Description: "Kopi, teh celup, susu, biskuit, dan camilan keluarga."},
+		{ID: "cat_minuman", Name: "Minuman & Camilan", Icon: "Coffee", Slug: "minuman-snack", Description: "Kopi, teh celup, susu, biskuit, dan camilan keluarga."},
 	}
 
 	s.deliverySlots = []DeliverySlot{
@@ -1544,6 +1589,7 @@ func (a *App) handleCategories(w http.ResponseWriter, r *http.Request) {
 		a.store.mutex.Lock()
 		a.store.categories = append(a.store.categories, c)
 		a.store.mutex.Unlock()
+		a.store.saveCategoriesToDisk()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(c)
@@ -6166,18 +6212,32 @@ func fetchRealSiskaperbapoPasuruanPrices(kabkota string) ([]ScrapedPriceItem, st
 					strings.Contains(nameLower, "bawang") || strings.Contains(nameLower, "garam") ||
 					strings.Contains(nameLower, "merica") || strings.Contains(nameLower, "ketumbar") {
 					category = "Bumbu Pawon"
+				} else if strings.Contains(nameLower, "pisang") || strings.Contains(nameLower, "jeruk") ||
+					strings.Contains(nameLower, "apel") || strings.Contains(nameLower, "semangka") ||
+					strings.Contains(nameLower, "melon") || strings.Contains(nameLower, "pepaya") ||
+					strings.Contains(nameLower, "mangga") || strings.Contains(nameLower, "alpukat") {
+					category = "Buah-buahan Segar"
 				} else if strings.Contains(nameLower, "wortel") || strings.Contains(nameLower, "tomat") ||
 					strings.Contains(nameLower, "kentang") || strings.Contains(nameLower, "kubis") ||
 					strings.Contains(nameLower, "kol") || strings.Contains(nameLower, "bayam") ||
 					strings.Contains(nameLower, "kangkung") || strings.Contains(nameLower, "sawi") ||
-					strings.Contains(nameLower, "buncis") {
-					category = "Sayur & Buah"
+					strings.Contains(nameLower, "buncis") || strings.Contains(nameLower, "terong") ||
+					strings.Contains(nameLower, "brokoli") {
+					category = "Sayuran Segar"
 				} else if strings.Contains(nameLower, "beras") || strings.Contains(nameLower, "gula") ||
 					strings.Contains(nameLower, "minyak") || strings.Contains(nameLower, "tepung") {
-					category = "Sembako & Beras"
+					category = "Sembako"
+				} else if strings.Contains(nameLower, "sosis") || strings.Contains(nameLower, "nugget") ||
+					strings.Contains(nameLower, "bakso") || strings.Contains(nameLower, "frozen") ||
+					strings.Contains(nameLower, "tempura") || strings.Contains(nameLower, "dimsum") ||
+					strings.Contains(nameLower, "siomay") || strings.Contains(nameLower, "kornet") ||
+					strings.Contains(nameLower, "rolade") {
+					category = "Frozen Food & Olahan"
 				} else if strings.Contains(nameLower, "ayam") || strings.Contains(nameLower, "daging") ||
-					strings.Contains(nameLower, "telur") || strings.Contains(nameLower, "ikan") {
-					category = "Lauk, Ayam & Daging"
+					strings.Contains(nameLower, "telur") || strings.Contains(nameLower, "ikan") ||
+					strings.Contains(nameLower, "udang") || strings.Contains(nameLower, "lele") ||
+					strings.Contains(nameLower, "tahu") || strings.Contains(nameLower, "tempe") {
+					category = "Daging & Lauk Segar"
 				}
 
 				matchedProdID := ""
@@ -6747,6 +6807,54 @@ func main() {
 					log.Printf("[Warning] Gagal inisialisasi tabel orders: %v\n", execErr)
 				} else {
 					log.Println("[Database] Tabel orders & order_items terverifikasi siap.")
+				}
+
+				initCategoriesSQL := `
+				CREATE TABLE IF NOT EXISTS categories (
+					id VARCHAR(50) PRIMARY KEY,
+					name VARCHAR(100) NOT NULL,
+					icon VARCHAR(50) NOT NULL,
+					slug VARCHAR(100) NOT NULL UNIQUE,
+					description TEXT,
+					display_order INTEGER DEFAULT 0,
+					created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+					updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+				);
+				INSERT INTO categories (id, name, icon, slug, description, display_order, updated_at) VALUES
+				('cat_sembako', 'Sembako', 'Layers', 'sembako', 'Beras pulen, minyak goreng, gula pasir, tepung terigu, dan kebutuhan pokok.', 1, NOW()),
+				('cat_sayur', 'Sayuran Segar', 'Leaf', 'sayuran-segar', 'Sayuran hijau petik subuh, umbi segar, dedaunan, dan sayur sop.', 2, NOW()),
+				('cat_buah', 'Buah-buahan Segar', 'Apple', 'buah-buahan', 'Aneka buah segar pilihan manis, kaya vitamin untuk keluarga.', 3, NOW()),
+				('cat_lauk', 'Daging & Lauk Segar', 'Soup', 'daging-lauk', 'Daging sapi, ayam potong segar, ikan segar, tahu, dan tempe.', 4, NOW()),
+				('cat_frozen', 'Frozen Food & Olahan', 'Package', 'frozen-food', 'Sosis, nugget, bakso, kentang beku, dan aneka makanan olahan praktis.', 5, NOW()),
+				('cat_bumbu', 'Bumbu Pawon', 'Flame', 'bumbu-pawon', 'Bawang merah, bawang putih, cabai, jahe, dan aneka rempah dapur.', 6, NOW()),
+				('cat_rumah', 'Kebutuhan Rumah', 'Layers', 'rumah-tangga', 'Sabun cuci piring, deterjen, pasta gigi, dan keperluan sanitasi rumah.', 7, NOW()),
+				('cat_minuman', 'Minuman & Camilan', 'Coffee', 'minuman-snack', 'Kopi, teh celup, susu, biskuit, dan camilan keluarga.', 8, NOW())
+				ON CONFLICT (id) DO UPDATE SET
+					name = EXCLUDED.name,
+					icon = EXCLUDED.icon,
+					slug = EXCLUDED.slug,
+					description = EXCLUDED.description,
+					display_order = EXCLUDED.display_order,
+					updated_at = NOW();
+
+				UPDATE products SET category_id = 'cat_buah'
+				WHERE category_id = 'cat_sayur' AND (
+					LOWER(name) LIKE '%pisang%' OR LOWER(name) LIKE '%jeruk%' OR LOWER(name) LIKE '%apel%' OR
+					LOWER(name) LIKE '%semangka%' OR LOWER(name) LIKE '%melon%' OR LOWER(name) LIKE '%pepaya%' OR
+					LOWER(name) LIKE '%buah%' OR LOWER(name) LIKE '%mangga%' OR LOWER(name) LIKE '%alpukat%' OR
+					LOWER(name) LIKE '%naga%' OR LOWER(name) LIKE '%salak%' OR LOWER(name) LIKE '%pir%'
+				);
+
+				UPDATE products SET category_id = 'cat_frozen'
+				WHERE (category_id = 'cat_lauk' OR category_id = 'cat_sayur') AND (
+					LOWER(name) LIKE '%sosis%' OR LOWER(name) LIKE '%nugget%' OR LOWER(name) LIKE '%bakso%' OR
+					LOWER(name) LIKE '%frozen%' OR LOWER(name) LIKE '%tempura%' OR LOWER(name) LIKE '%dimsum%' OR
+					LOWER(name) LIKE '%siomay%' OR LOWER(name) LIKE '%kornet%' OR LOWER(name) LIKE '%rolade%'
+				);`
+				if _, execErr := db.Exec(initCategoriesSQL); execErr != nil {
+					log.Printf("[Warning] Gagal inisialisasi tabel categories: %v\n", execErr)
+				} else {
+					log.Println("[Database] Tabel categories & sinkronisasi data master terverifikasi siap.")
 				}
 
 				initProductsSQL := `

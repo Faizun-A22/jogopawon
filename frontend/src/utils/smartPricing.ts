@@ -70,14 +70,22 @@ export function isKgUnit(unit: string = ''): boolean {
 export function detectProductTier(productName: string, categoryName: string = ''): ProductTier {
   const text = (productName + ' ' + categoryName).toLowerCase();
 
-  // 1. KVI (Known Value Items - Sembako Patokan Kampung yang harganya dihafal pembeli)
+  // 1. KVI & Makanan Olahan Kemasan (Sembako & Frozen Food - Susut 0%)
   if (
     text.includes('minyak') ||
     text.includes('beras') ||
     text.includes('gula pasir') ||
     text.includes('telur ayam') ||
     text.includes('terigu') ||
-    text.includes('indomie')
+    text.includes('indomie') ||
+    text.includes('sosis') ||
+    text.includes('nugget') ||
+    text.includes('bakso') ||
+    text.includes('frozen') ||
+    text.includes('tempura') ||
+    text.includes('dimsum') ||
+    text.includes('siomay') ||
+    text.includes('kornet')
   ) {
     return 'kvi';
   }

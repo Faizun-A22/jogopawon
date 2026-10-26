@@ -685,14 +685,20 @@ export const App: React.FC = () => {
 
   const getCategoryIcon = (iconName: string, catName?: string, catSlug?: string) => {
     const text = ((catName || '') + ' ' + (catSlug || '') + ' ' + iconName).toLowerCase();
-    if (text.includes('beras') || text.includes('sembako') || text.includes('minyak') || text.includes('telur')) {
+    if (text.includes('frozen') || text.includes('sosis') || text.includes('nugget') || text.includes('olahan') || text.includes('bakso')) {
+      return <span className="text-sm">🌭</span>;
+    }
+    if (text.includes('buah') || text.includes('apple') || text.includes('fruit')) {
+      return <span className="text-sm">🍎</span>;
+    }
+    if (text.includes('sayur') || text.includes('leaf') || text.includes('carrot')) {
+      return <span className="text-sm">🥬</span>;
+    }
+    if (text.includes('beras') || text.includes('sembako') || text.includes('minyak') || text.includes('gula')) {
       return <span className="text-sm">🌾</span>;
     }
     if (text.includes('lauk') || text.includes('daging') || text.includes('ayam') || text.includes('ikan') || text.includes('soup')) {
       return <span className="text-sm">🥩</span>;
-    }
-    if (text.includes('sayur') || text.includes('buah') || text.includes('leaf') || text.includes('carrot') || text.includes('apple')) {
-      return <span className="text-sm">🥬</span>;
     }
     if (text.includes('bumbu') || text.includes('rempah') || text.includes('cabai') || text.includes('flame')) {
       return <span className="text-sm">🌶️</span>;
@@ -1166,7 +1172,7 @@ export const App: React.FC = () => {
                 <span className="text-[10px] font-black text-rose-600 tracking-tight">Super Deal</span>
               </motion.button>
 
-              {/* Story 2: Sembako & Beras */}
+              {/* Story 2: Sembako */}
               <motion.button
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.88 }}
@@ -1190,36 +1196,12 @@ export const App: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-700 tracking-tight">Sembako</span>
               </motion.button>
 
-              {/* Story 3: Lauk & Daging Segar */}
+              {/* Story 3: Sayuran Segar */}
               <motion.button
                 whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.88 }}
                 onClick={() => {
-                  const laukCat = categories.find((c) => c.slug.includes('lauk') || c.slug.includes('daging') || c.name.toLowerCase().includes('lauk') || c.name.toLowerCase().includes('daging'));
-                  if (laukCat) setSelectedCategory(laukCat.id);
-                  scrollToCategories();
-                }}
-                className="flex flex-col items-center gap-1 shrink-0 group cursor-pointer"
-              >
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-rose-400 via-red-500 to-red-600 hover:scale-105 transition-all shadow-sm">
-                    <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-xl shadow-inner">
-                      🥩
-                    </div>
-                  </div>
-                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
-                    SEGAR
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Lauk & Daging</span>
-              </motion.button>
-
-              {/* Story 4: Sayur & Buah Subuh */}
-              <motion.button
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.88 }}
-                onClick={() => {
-                  const sayurCat = categories.find((c) => c.slug.includes('sayur') || c.name.toLowerCase().includes('sayur'));
+                  const sayurCat = categories.find((c) => c.slug.includes('sayur') || (c.name.toLowerCase().includes('sayur') && !c.name.toLowerCase().includes('buah')));
                   if (sayurCat) setSelectedCategory(sayurCat.id);
                   scrollToCategories();
                 }}
@@ -1235,7 +1217,79 @@ export const App: React.FC = () => {
                     PANEN
                   </span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Sayur & Buah</span>
+                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Sayuran</span>
+              </motion.button>
+
+              {/* Story 4: Buah-buahan Segar */}
+              <motion.button
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  const buahCat = categories.find((c) => c.slug.includes('buah') || c.name.toLowerCase().includes('buah'));
+                  if (buahCat) setSelectedCategory(buahCat.id);
+                  scrollToCategories();
+                }}
+                className="flex flex-col items-center gap-1 shrink-0 group cursor-pointer"
+              >
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-rose-400 via-pink-500 to-red-500 hover:scale-105 transition-all shadow-sm">
+                    <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-xl shadow-inner">
+                      🍎
+                    </div>
+                  </div>
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
+                    MANIS
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Buah Segar</span>
+              </motion.button>
+
+              {/* Story 5: Daging & Lauk Segar */}
+              <motion.button
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  const laukCat = categories.find((c) => c.slug.includes('lauk') || c.slug.includes('daging') || c.name.toLowerCase().includes('lauk') || c.name.toLowerCase().includes('daging'));
+                  if (laukCat) setSelectedCategory(laukCat.id);
+                  scrollToCategories();
+                }}
+                className="flex flex-col items-center gap-1 shrink-0 group cursor-pointer"
+              >
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-rose-500 via-red-600 to-rose-700 hover:scale-105 transition-all shadow-sm">
+                    <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-xl shadow-inner">
+                      🥩
+                    </div>
+                  </div>
+                  <span className="absolute -top-1 -right-1 bg-rose-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
+                    SEGAR
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Daging & Lauk</span>
+              </motion.button>
+
+              {/* Story 6: Frozen Food & Olahan */}
+              <motion.button
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.88 }}
+                onClick={() => {
+                  const frozenCat = categories.find((c) => c.slug.includes('frozen') || c.name.toLowerCase().includes('frozen') || c.name.toLowerCase().includes('olahan') || c.name.toLowerCase().includes('sosis'));
+                  if (frozenCat) setSelectedCategory(frozenCat.id);
+                  scrollToCategories();
+                }}
+                className="flex flex-col items-center gap-1 shrink-0 group cursor-pointer"
+              >
+                <div className="relative">
+                  <div className="w-14 h-14 rounded-full p-0.5 bg-gradient-to-tr from-orange-400 via-amber-500 to-orange-600 hover:scale-105 transition-all shadow-sm">
+                    <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-xl shadow-inner">
+                      🌭
+                    </div>
+                  </div>
+                  <span className="absolute -top-1 -right-1 bg-orange-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs">
+                    PRAKTIS
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-slate-700 tracking-tight">Frozen Food</span>
               </motion.button>
 
               {/* Story 5: Bumbu Pawon */}
