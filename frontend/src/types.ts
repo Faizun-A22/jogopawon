@@ -267,6 +267,8 @@ export interface RewardRedemption {
   status: RedemptionStatus;
   courier_name?: string;
   admin_notes?: string;
+  is_used?: boolean;
+  used_in_order_id?: string;
   created_at: string;
   updated_at: string;
 }

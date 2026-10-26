@@ -254,6 +254,8 @@ type RewardRedemption struct {
 	Status          string    `json:"status"` // "pending", "approved", "shipping", "completed", "rejected"
 	CourierName     string    `json:"courier_name,omitempty"`
 	AdminNotes      string    `json:"admin_notes,omitempty"`
+	IsUsed          bool      `json:"is_used"`
+	UsedInOrderID   string    `json:"used_in_order_id,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -956,10 +958,17 @@ func (s *Store) loadRedemptionsFromDisk() {
 	}
 	var loaded []RewardRedemption
 	if err := json.Unmarshal(bytes, &loaded); err == nil && len(loaded) > 0 {
+		totalRedeemed := 0
+		for _, r := range loaded {
+			if r.Status != "rejected" {
+				totalRedeemed += r.PointsSpent
+			}
+		}
 		s.mutex.Lock()
 		s.rewardRedemptions = loaded
+		s.totalPointsRedeemed = totalRedeemed
 		s.mutex.Unlock()
-		log.Printf("[Storage] Berhasil memuat %d klaim hadiah dari penyimpanan lokal.\n", len(loaded))
+		log.Printf("[Storage] Berhasil memuat %d klaim hadiah dari penyimpanan lokal (Total Poin Redeem: %d).\n", len(loaded), totalRedeemed)
 	}
 }
 
@@ -1471,13 +1480,26 @@ func (s *Store) loadRedemptionsFromDB() {
 		SELECT id, claim_number, reward_id, reward_name, COALESCE(reward_image, ''), COALESCE(reward_category, ''),
 		       COALESCE(reward_unit, ''), points_spent, customer_name, customer_phone, COALESCE(delivery_option, 'antar_subuh'),
 		       COALESCE(delivery_address, ''), COALESCE(notes, ''), status, COALESCE(courier_name, ''), COALESCE(admin_notes, ''),
+		       COALESCE(is_used, false), COALESCE(used_in_order_id, ''),
 		       created_at, updated_at
 		FROM reward_redemptions
 		ORDER BY created_at DESC
 	`)
 	if err != nil {
-		log.Printf("[Database Warning] Gagal membaca reward_redemptions: %v\n", err)
-		return
+		// Fallback query tanpa kolom is_used jika tabel lama belum di-patch
+		rows, err = s.db.Query(`
+			SELECT id, claim_number, reward_id, reward_name, COALESCE(reward_image, ''), COALESCE(reward_category, ''),
+			       COALESCE(reward_unit, ''), points_spent, customer_name, customer_phone, COALESCE(delivery_option, 'antar_subuh'),
+			       COALESCE(delivery_address, ''), COALESCE(notes, ''), status, COALESCE(courier_name, ''), COALESCE(admin_notes, ''),
+			       false, '',
+			       created_at, updated_at
+			FROM reward_redemptions
+			ORDER BY created_at DESC
+		`)
+		if err != nil {
+			log.Printf("[Database Warning] Gagal membaca reward_redemptions: %v\n", err)
+			return
+		}
 	}
 	defer rows.Close()
 
@@ -1488,17 +1510,25 @@ func (s *Store) loadRedemptionsFromDB() {
 			&itm.ID, &itm.ClaimNumber, &itm.RewardID, &itm.RewardName, &itm.RewardImage, &itm.RewardCategory,
 			&itm.RewardUnit, &itm.PointsSpent, &itm.CustomerName, &itm.CustomerPhone, &itm.DeliveryOption,
 			&itm.DeliveryAddress, &itm.Notes, &itm.Status, &itm.CourierName, &itm.AdminNotes,
+			&itm.IsUsed, &itm.UsedInOrderID,
 			&itm.CreatedAt, &itm.UpdatedAt,
 		); err == nil {
 			loaded = append(loaded, itm)
 		}
 	}
 	if len(loaded) > 0 {
+		totalRedeemed := 0
+		for _, itm := range loaded {
+			if itm.Status != "rejected" {
+				totalRedeemed += itm.PointsSpent
+			}
+		}
 		s.mutex.Lock()
 		s.rewardRedemptions = loaded
+		s.totalPointsRedeemed = totalRedeemed
 		s.mutex.Unlock()
 		s.saveRedemptionsToDisk()
-		log.Printf("[Database] Berhasil memuat %d klaim hadiah dari PostgreSQL.\n", len(loaded))
+		log.Printf("[Database] Berhasil memuat %d klaim hadiah dari PostgreSQL (Total Poin Redeem: %d).\n", len(loaded), totalRedeemed)
 	}
 }
 
@@ -2449,6 +2479,7 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 
 		// KEAMANAN KRITIS: Validasi Nilai Diskon & Kode Promo Independen di Backend
 		var validatedDiscount float64 = 0
+		var usedVoucherClaimID string
 		cleanPromo := strings.ToUpper(strings.TrimSpace(req.PromoCode))
 
 		if cleanPromo != "" {
@@ -2465,17 +2496,29 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 				req.DeliveryFee = 0
 				validatedDiscount = 0
 			default:
-				// Cek apakah berupa voucher penukaran koin reward
-				isVoucherReward := false
-				for _, rew := range a.store.rewards {
-					if rew.Category == "Voucher" && (strings.EqualFold(rew.ID, cleanPromo) || strings.EqualFold(rew.Name, cleanPromo)) {
-						isVoucherReward = true
-						validatedDiscount = 5000
+				// VALIDASI VOUCHER HADIAH RESMI:
+				// Hanya kode klaim penukaran koin (RDM-xxxx) valid milik pembeli yang belum pernah dipakai
+				for rdmIdx, claim := range a.store.rewardRedemptions {
+					if (strings.EqualFold(claim.ClaimNumber, cleanPromo) || strings.EqualFold(claim.ID, cleanPromo)) &&
+						normalizePhone(claim.CustomerPhone) == req.CustomerPhone &&
+						!claim.IsUsed &&
+						claim.Status != "rejected" &&
+						(claim.RewardCategory == "Voucher" || strings.Contains(strings.ToLower(claim.RewardName), "voucher")) {
+
+						discVal := 5000.0
+						nameUpper := strings.ToUpper(claim.RewardName)
+						if strings.Contains(nameUpper, "10.000") || strings.Contains(nameUpper, "10K") || strings.Contains(nameUpper, "10000") {
+							discVal = 10000.0
+						} else if strings.Contains(nameUpper, "20.000") || strings.Contains(nameUpper, "20K") || strings.Contains(nameUpper, "20000") {
+							discVal = 20000.0
+						} else if strings.Contains(nameUpper, "2.500") || strings.Contains(nameUpper, "2500") {
+							discVal = 2500.0
+						}
+
+						validatedDiscount = discVal
+						usedVoucherClaimID = a.store.rewardRedemptions[rdmIdx].ID
 						break
 					}
-				}
-				if !isVoucherReward {
-					validatedDiscount = 0
 				}
 			}
 		}
@@ -2492,10 +2535,10 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 		}
 		req.TotalProfit = calcProfit
 
-		// Rumus: 7% dari keuntungan (Total Profit) untuk pembeli, 5% untuk pengundang (Referral)
+		// Rumus: 7% dari keuntungan untuk pembeli (min 1 koin), 5% untuk pengundang (min 1 koin)
 		if req.TotalProfit > 0 {
-			req.PointsEarned = int(math.Floor(req.TotalProfit * 0.07))
-			req.ReferralPointsEarned = int(math.Floor(req.TotalProfit * 0.05))
+			req.PointsEarned = int(math.Max(1, math.Floor(req.TotalProfit * 0.07)))
+			req.ReferralPointsEarned = int(math.Max(1, math.Floor(req.TotalProfit * 0.05)))
 		} else {
 			req.PointsEarned = 0
 			req.ReferralPointsEarned = 0
@@ -2534,6 +2577,24 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		a.store.orders = append([]Order{req}, a.store.orders...)
+
+		// Tandai voucher telah digunakan jika pesanan berhasil dibuat
+		if usedVoucherClaimID != "" {
+			for rdmIdx, claim := range a.store.rewardRedemptions {
+				if claim.ID == usedVoucherClaimID {
+					a.store.rewardRedemptions[rdmIdx].IsUsed = true
+					a.store.rewardRedemptions[rdmIdx].UsedInOrderID = req.ID
+					a.store.rewardRedemptions[rdmIdx].Status = "completed"
+					a.store.rewardRedemptions[rdmIdx].UpdatedAt = now
+					if a.store.db != nil {
+						_, _ = a.store.db.Exec(`UPDATE reward_redemptions SET is_used = true, used_in_order_id = $1, status = 'completed', updated_at = NOW() WHERE id = $2`, req.ID, claim.ID)
+					}
+					log.Printf("[Voucher Terpakai] Klaim %s berhasil digunakan untuk pesanan %s diskon Rp %.0f", claim.ClaimNumber, req.OrderNumber, validatedDiscount)
+					break
+				}
+			}
+			a.store.saveRedemptionsToDisk()
+		}
 
 		// Pastikan akun pelanggan tercatat (Koin pesanan baru diberikan ketika pembayaran LUNAS diverifikasi admin)
 		req.PointsAwarded = false
@@ -2956,6 +3017,8 @@ func (a *App) handleOrderStatus(w http.ResponseWriter, r *http.Request) {
 
 	for i, o := range a.store.orders {
 		if strings.EqualFold(o.ID, id) || strings.EqualFold(o.OrderNumber, id) {
+			oldPaymentStatus := o.PaymentStatus
+
 			if body.Status != "" {
 				a.store.orders[i].Status = body.Status
 			}
@@ -3035,6 +3098,73 @@ func (a *App) handleOrderStatus(w http.ResponseWriter, r *http.Request) {
 						a.store.orders[i].ReferralAwarded = true
 						break
 					}
+				}
+			}
+
+			// CLAWBACK KEAMANAN: Jika pesanan dibatalkan atau refund setelah sempat paid
+			isCancelledOrRefunded := strings.EqualFold(a.store.orders[i].Status, "cancelled") ||
+				strings.EqualFold(a.store.orders[i].PaymentStatus, "refunded") ||
+				strings.EqualFold(a.store.orders[i].PaymentStatus, "unpaid")
+
+			if isCancelledOrRefunded && (oldPaymentStatus == "paid" || o.PointsAwarded) {
+				// Tarik kembali koin pembeli jika sudah pernah terbit
+				if a.store.orders[i].PointsAwarded && a.store.orders[i].PointsEarned > 0 {
+					custPhone := normalizePhone(a.store.orders[i].CustomerPhone)
+					for uIdx, u := range a.store.users {
+						if normalizePhone(u.Phone) == custPhone {
+							a.store.users[uIdx].Points -= a.store.orders[i].PointsEarned
+							if a.store.users[uIdx].Points < 0 {
+								a.store.users[uIdx].Points = 0
+							}
+							if a.store.db != nil {
+								_, _ = a.store.db.Exec(`UPDATE users SET points = $1, updated_at = NOW() WHERE phone = $2`, a.store.users[uIdx].Points, custPhone)
+							}
+							log.Printf("[Clawback Poin] Menarik kembali %d koin dari %s atas pembatalan pesanan %s\n", a.store.orders[i].PointsEarned, custPhone, a.store.orders[i].OrderNumber)
+							break
+						}
+					}
+					a.store.orders[i].PointsAwarded = false
+				}
+
+				// Tarik kembali komisi referral pengundang jika sudah pernah terbit
+				if a.store.orders[i].ReferralAwarded && a.store.orders[i].ReferralPointsEarned > 0 {
+					targetRefCode := strings.ToUpper(strings.TrimSpace(a.store.orders[i].ReferralCode))
+					for uIdx, u := range a.store.users {
+						if strings.EqualFold(u.ReferralCode, targetRefCode) || strings.EqualFold(u.Phone, targetRefCode) {
+							a.store.users[uIdx].Points -= a.store.orders[i].ReferralPointsEarned
+							if a.store.users[uIdx].Points < 0 {
+								a.store.users[uIdx].Points = 0
+							}
+							a.store.users[uIdx].ReferralEarnings -= a.store.orders[i].ReferralPointsEarned
+							if a.store.users[uIdx].ReferralEarnings < 0 {
+								a.store.users[uIdx].ReferralEarnings = 0
+							}
+							if a.store.db != nil {
+								_, _ = a.store.db.Exec(`UPDATE users SET points = $1, referral_earnings = $2, updated_at = NOW() WHERE id = $3`, a.store.users[uIdx].Points, a.store.users[uIdx].ReferralEarnings, u.ID)
+							}
+							log.Printf("[Clawback Referral] Menarik kembali %d koin referral dari pengundang %s atas pembatalan pesanan %s\n", a.store.orders[i].ReferralPointsEarned, u.Name, a.store.orders[i].OrderNumber)
+							break
+						}
+					}
+					a.store.orders[i].ReferralAwarded = false
+				}
+
+				// Pulihkan voucher hadiah jika pesanan ini menggunakan voucher
+				if o.PromoCode != "" {
+					for rdmIdx, claim := range a.store.rewardRedemptions {
+						if strings.EqualFold(claim.ClaimNumber, o.PromoCode) || strings.EqualFold(claim.ID, o.PromoCode) || claim.UsedInOrderID == o.ID {
+							a.store.rewardRedemptions[rdmIdx].IsUsed = false
+							a.store.rewardRedemptions[rdmIdx].UsedInOrderID = ""
+							a.store.rewardRedemptions[rdmIdx].Status = "approved"
+							a.store.rewardRedemptions[rdmIdx].UpdatedAt = time.Now()
+							if a.store.db != nil {
+								_, _ = a.store.db.Exec(`UPDATE reward_redemptions SET is_used = false, used_in_order_id = '', status = 'approved', updated_at = NOW() WHERE id = $1`, claim.ID)
+							}
+							log.Printf("[Voucher Dipulihkan] Voucher %s dikembalikan aktif karena pesanan %s dibatalkan\n", claim.ClaimNumber, o.OrderNumber)
+							break
+						}
+					}
+					a.store.saveRedemptionsToDisk()
 				}
 			}
 
@@ -3922,7 +4052,13 @@ func (a *App) handleAccounting(w http.ResponseWriter, r *http.Request) {
 		summary.ProfitMargin = (summary.NetProfit / summary.NetSales) * 100
 	}
 
-	summary.TotalPointsRedeemed = a.store.totalPointsRedeemed
+	totalRedeemed := 0
+	for _, claim := range a.store.rewardRedemptions {
+		if claim.Status != "rejected" {
+			totalRedeemed += claim.PointsSpent
+		}
+	}
+	summary.TotalPointsRedeemed = totalRedeemed
 	summary.Transactions = a.store.cashTransactions
 
 	w.Header().Set("Content-Type", "application/json")
@@ -4198,21 +4334,28 @@ func (a *App) handleCustomerRegister(w http.ResponseWriter, r *http.Request) {
 	a.store.mutex.Lock()
 	defer a.store.mutex.Unlock()
 
-	// 1. Cek duplikasi di memory
-	for _, u := range a.store.users {
-		if u.Phone == req.Phone {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp ini sudah terdaftar. Silakan pilih 'Masuk Akun'."})
-			return
+	// 1. Cek apakah nomor WhatsApp sudah ada di memori
+	var existingUserIdx = -1
+	for idx, u := range a.store.users {
+		if normalizePhone(u.Phone) == req.Phone {
+			existingUserIdx = idx
+			break
 		}
 	}
 
-	// 2. Cek duplikasi di PostgreSQL jika terhubung
+	// 2. Jika akun sudah terdaftar dan SUDAH memiliki kata sandi resmi -> Tolak duplikasi
+	if existingUserIdx != -1 && a.store.users[existingUserIdx].PasswordHash != "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp ini sudah terdaftar. Silakan pilih 'Masuk Akun'."})
+		return
+	}
+
+	// 3. Cek di PostgreSQL jika terhubung
 	if a.store.db != nil {
-		var count int
-		_ = a.store.db.QueryRow("SELECT COUNT(*) FROM users WHERE phone = $1", req.Phone).Scan(&count)
-		if count > 0 {
+		var existingDBHash string
+		err := a.store.db.QueryRow("SELECT COALESCE(password_hash, '') FROM users WHERE phone = $1 LIMIT 1", req.Phone).Scan(&existingDBHash)
+		if err == nil && existingDBHash != "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp ini sudah terdaftar di database. Silakan pilih 'Masuk Akun'."})
@@ -4223,6 +4366,69 @@ func (a *App) handleCustomerRegister(w http.ResponseWriter, r *http.Request) {
 	salt := fmt.Sprintf("jpw_cust_%d", time.Now().UnixNano())
 	passwordHash := hashPasswordWithSalt(req.Password, salt)
 	myRefCode := generateReferralCode(req.Name, req.Phone)
+
+	// UPGRADE AKUN TAMU: Jika nomor pernah belanja sebagai tamu (Guest Checkout), pasang password dan gabungkan poin
+	if existingUserIdx != -1 {
+		targetUser := &a.store.users[existingUserIdx]
+		if req.Name != "" {
+			targetUser.Name = req.Name
+		}
+		if req.Email != "" {
+			targetUser.Email = req.Email
+		}
+		targetUser.PasswordHash = passwordHash
+		targetUser.Salt = salt
+		if targetUser.Address == "" && req.Address != "" {
+			targetUser.Address = req.Address
+		}
+		if targetUser.Note == "" && req.Note != "" {
+			targetUser.Note = req.Note
+		}
+		// Tambahkan 50 bonus poin selamat datang ke saldo poin yang sudah terkumpul
+		targetUser.Points += 50
+		if targetUser.ReferralCode == "" {
+			targetUser.ReferralCode = myRefCode
+		}
+
+		if cleanRefCode != "" && cleanRefCode != targetUser.ReferralCode && targetUser.ReferredBy == "" {
+			for i, inviter := range a.store.users {
+				if (strings.EqualFold(inviter.ReferralCode, cleanRefCode) || strings.EqualFold(inviter.Phone, cleanRefCode)) && inviter.Phone != targetUser.Phone {
+					targetUser.ReferredBy = inviter.ReferralCode
+					a.store.users[i].ReferralCount++
+					if a.store.db != nil {
+						_, _ = a.store.db.Exec(`UPDATE users SET referral_count = referral_count + 1 WHERE id = $1`, inviter.ID)
+					}
+					break
+				}
+			}
+		}
+
+		if a.store.db != nil {
+			_, _ = a.store.db.Exec(`
+				UPDATE users
+				SET name = $1, email = $2, password_hash = $3, salt = $4, address = $5, note = $6,
+				    points = $7, referral_code = $8, referred_by = $9, updated_at = NOW()
+				WHERE id = $10 OR phone = $11
+			`, targetUser.Name, targetUser.Email, targetUser.PasswordHash, targetUser.Salt, targetUser.Address, targetUser.Note,
+				targetUser.Points, targetUser.ReferralCode, targetUser.ReferredBy, targetUser.ID, targetUser.Phone)
+		}
+
+		targetUser.Token = a.generateCustomerToken(targetUser.ID, targetUser.Phone)
+		a.store.saveUsersToDisk()
+		go a.store.syncUserToSupabaseREST(*targetUser)
+
+		log.Printf("[Guest Upgraded] Akun tamu %s (%s) berhasil ditingkatkan menjadi akun resmi (+50 poin, Total: %d poin)\n", targetUser.Name, targetUser.Phone, targetUser.Points)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Pendaftaran akun berhasil! Poin belanja Anda dari pesanan sebelumnya telah digabungkan dengan bonus 50 poin.",
+			"user":    *targetUser,
+			"token":   targetUser.Token,
+		})
+		return
+	}
 
 	newUser := CustomerUser{
 		ID:               fmt.Sprintf("usr_%d", time.Now().UnixNano()),
@@ -6932,11 +7138,16 @@ func main() {
 					status VARCHAR(50) NOT NULL DEFAULT 'pending',
 					courier_name VARCHAR(100) DEFAULT '',
 					admin_notes TEXT DEFAULT '',
+					is_used BOOLEAN DEFAULT false,
+					used_in_order_id VARCHAR(50),
 					created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 					updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 				);
+				ALTER TABLE reward_redemptions ADD COLUMN IF NOT EXISTS is_used BOOLEAN DEFAULT false;
+				ALTER TABLE reward_redemptions ADD COLUMN IF NOT EXISTS used_in_order_id VARCHAR(50);
 				CREATE INDEX IF NOT EXISTS idx_reward_redemptions_phone ON reward_redemptions(customer_phone);
-				CREATE INDEX IF NOT EXISTS idx_reward_redemptions_status ON reward_redemptions(status);`
+				CREATE INDEX IF NOT EXISTS idx_reward_redemptions_status ON reward_redemptions(status);
+				CREATE INDEX IF NOT EXISTS idx_reward_redemptions_claim_number ON reward_redemptions(claim_number);`
 				if _, execErr := db.Exec(initRedemptionsSQL); execErr != nil {
 					log.Printf("[Warning] Gagal inisialisasi tabel reward_redemptions: %v\n", execErr)
 				} else {
