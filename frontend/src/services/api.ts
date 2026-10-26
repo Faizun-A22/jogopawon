@@ -57,10 +57,42 @@ export const normalizeImageUrl = (url?: string): string => {
 
 // Helper to get Bearer Authorization header for admin endpoints
 export const getAdminAuthHeaders = (): Record<string, string> => {
-  const token =
-    (typeof window !== 'undefined' && (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token'))) ||
+  let token =
+    (typeof window !== 'undefined' &&
+      (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token'))) ||
     '';
+  token = token.trim();
+  if (token.startsWith('"') && token.endsWith('"')) {
+    token = token.slice(1, -1).trim();
+  }
   return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+// Central helper to validate admin responses, handle 401 expiration, and unpack error messages
+export const handleAdminResponse = async (res: Response, defaultErrMsg: string) => {
+  if (!res.ok) {
+    if (res.status === 401) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('jogopawon_admin_auth');
+        sessionStorage.removeItem('jogopawon_admin_auth');
+        localStorage.removeItem('jogopawon_admin_token');
+        sessionStorage.removeItem('jogopawon_admin_token');
+        window.dispatchEvent(new Event('jogopawon_admin_unauthorized'));
+      }
+      throw new Error('Sesi admin telah kedaluwarsa atau belum masuk. Silakan masukkan PIN Admin kembali.');
+    }
+    let errMsg = defaultErrMsg;
+    try {
+      const errJson = await res.json();
+      errMsg = errJson.error || errJson.message || errMsg;
+    } catch {
+      try {
+        const errText = await res.text();
+        if (errText) errMsg = errText;
+      } catch {}
+    }
+    throw new Error(errMsg);
+  }
 };
 
 // Helper to get Bearer Authorization header for customer endpoints
@@ -271,21 +303,21 @@ export const api = {
   },
 
   async updateProduct(product: Product): Promise<Product> {
-    const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
+    const res = await fetch(`${API_BASE_URL}/products/${encodeURIComponent(product.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(product),
     });
-    if (!res.ok) throw new Error('Gagal mengupdate produk');
+    await handleAdminResponse(res, 'Gagal mengupdate produk');
     return res.json();
   },
 
   async deleteProduct(id: string): Promise<void> {
-    const res = await fetch(`${API_BASE_URL}/products/${id}`, {
+    const res = await fetch(`${API_BASE_URL}/products/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: getAdminAuthHeaders(),
     });
-    if (!res.ok) throw new Error('Gagal menghapus produk');
+    await handleAdminResponse(res, 'Gagal menghapus produk');
   },
 
   async deleteOrder(id: string): Promise<void> {
@@ -305,7 +337,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(updates),
     });
-    if (!res.ok) throw new Error('Gagal memperbarui harga produk');
+    await handleAdminResponse(res, 'Gagal memperbarui harga produk');
     return res.json();
   },
 
@@ -353,7 +385,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(product),
     });
-    if (!res.ok) throw new Error('Gagal menambah produk');
+    await handleAdminResponse(res, 'Gagal menambah produk');
     return res.json();
   },
 

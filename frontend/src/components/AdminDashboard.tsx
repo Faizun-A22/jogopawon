@@ -126,14 +126,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   newOrderAlert,
   onDismissAlert,
 }) => {
-  // Authentication State (Persistent until explicit logout)
+  // Authentication State (Requires both valid auth flag AND non-empty token)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return (
+    const hasAuth =
       localStorage.getItem('jogopawon_admin_auth') === 'true' ||
-      sessionStorage.getItem('jogopawon_admin_auth') === 'true'
+      sessionStorage.getItem('jogopawon_admin_auth') === 'true';
+    const hasToken = Boolean(
+      (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token') || '').trim()
     );
+    return hasAuth && hasToken;
   });
   const [pinInput, setPinInput] = useState('');
+
+  // Auto-listen to unauthorized/expired admin session events from API client
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setIsAuthenticated(false);
+      setAuthError('Sesi login admin telah berakhir. Silakan masukkan PIN pengelola kembali.');
+    };
+    window.addEventListener('jogopawon_admin_unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('jogopawon_admin_unauthorized', handleUnauthorized);
+  }, []);
   const [authError, setAuthError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
