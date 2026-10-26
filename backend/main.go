@@ -1763,7 +1763,7 @@ func (a *App) handleProducts(w http.ResponseWriter, r *http.Request) {
 		a.store.mutex.RLock()
 		defer a.store.mutex.RUnlock()
 
-		var filtered []Product
+		filtered := []Product{}
 		for _, p := range a.store.products {
 			p.NormalizeMedia()
 			matchCategory := (categoryID == "" || categoryID == "all" || p.CategoryID == categoryID)

@@ -166,10 +166,12 @@ export const api = {
 
     const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`);
     if (!res.ok) throw new Error('Gagal memuat produk sayur');
-    const products: Product[] = await res.json();
+    const raw = await res.json();
+    const products: Product[] = Array.isArray(raw) ? raw : [];
     return products.map(p => ({
       ...p,
       image_url: normalizeImageUrl(p.image_url),
+      images: p.images && p.images.length > 0 ? p.images.map(img => normalizeImageUrl(img)) : (p.image_url ? [normalizeImageUrl(p.image_url)] : [])
     }));
   },
 
