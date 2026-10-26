@@ -19,12 +19,15 @@ import { api, realtime } from '../services/api';
 import { compressImage } from '../utils/imageCompressor';
 import { PriceRadarScraper } from './PriceRadarScraper';
 import { ThermalReceiptModal } from './ThermalReceiptModal';
+import { KgOnsProfitCalculatorModal } from './KgOnsProfitCalculatorModal';
+import { groupOrdersByCluster, groupOrdersByDesa, PASURUAN_DELIVERY_CLUSTERS, ClusterOrderGroup, DesaOrderGroup, SequencedOrderItem } from '../utils/deliveryCluster';
 import {
   calculateSmartPrice,
   analyzeCatalogMargins,
   generateAutoMarkupEdits,
   SmartPricingConfig,
   DEFAULT_SMART_CONFIG,
+  isKgUnit,
 } from '../utils/smartPricing';
 import {
   Package,
@@ -155,6 +158,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [checkedProcItems, setCheckedProcItems] = useState<Record<string, boolean>>({});
   const [selectedCourierMap, setSelectedCourierMap] = useState<Record<string, string>>({});
+  const [orderViewMode, setOrderViewMode] = useState<'list' | 'clusters'>('list');
+  const [clusterSubMode, setClusterSubMode] = useState<'desa' | 'cluster'>('desa');
 
   // Accounting cash transaction form state
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
@@ -183,6 +188,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
   const [isSmartConfigModalOpen, setIsSmartConfigModalOpen] = useState<boolean>(false);
   const [smartPricingFilter, setSmartPricingFilter] = useState<'all' | 'critical' | 'fair' | 'healthy'>('all');
+
+  // Kalkulator Laba Ons ke Kg State
+  const [isKgOnsModalOpen, setIsKgOnsModalOpen] = useState<boolean>(false);
+  const [calculatorTargetProduct, setCalculatorTargetProduct] = useState<Product | null>(null);
+
+  // Real-time Low Margin Alert State (Hanya untuk produk /kg yang untung < Rp 500)
+  const [lowMarginAlert, setLowMarginAlert] = useState<{
+    productId: string;
+    productName: string;
+    unit: string;
+    currentProfit: number;
+    suggestedPrice: number;
+  } | null>(null);
 
   // Variant Modal State
   const [isVariantModalOpen, setIsVariantModalOpen] = useState<boolean>(false);
@@ -270,7 +288,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [paidSuccessModalOrder, setPaidSuccessModalOrder] = useState<Order | null>(null);
   const [isAccingPaymentId, setIsAccingPaymentId] = useState<string | null>(null);
 
-  const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => {
+    const num = typeof val === 'string' ? parseFloat(val) : val;
+    return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  };
 
   const handleAccPayment = async (order: Order) => {
     setIsAccingPaymentId(order.id);
@@ -398,6 +419,10 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
         setIsAuthenticated(true);
         localStorage.setItem('jogopawon_admin_auth', 'true');
         sessionStorage.setItem('jogopawon_admin_auth', 'true');
+        if (res.token) {
+          localStorage.setItem('jogopawon_admin_token', res.token);
+          sessionStorage.setItem('jogopawon_admin_token', res.token);
+        }
         setPinInput('');
       } else {
         setAuthError(res.error || 'Kata sandi pengelola salah!');
@@ -412,6 +437,8 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
   const handleLogout = () => {
     localStorage.removeItem('jogopawon_admin_auth');
     sessionStorage.removeItem('jogopawon_admin_auth');
+    localStorage.removeItem('jogopawon_admin_token');
+    sessionStorage.removeItem('jogopawon_admin_token');
     setIsAuthenticated(false);
     window.location.href = '/';
   };
@@ -490,6 +517,14 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
     if (orderFilter === 'all') return true;
     return o.status === orderFilter;
   });
+
+  const clusterGroups: ClusterOrderGroup[] = useMemo(() => {
+    return groupOrdersByCluster(filteredOrders, PASURUAN_DELIVERY_CLUSTERS);
+  }, [filteredOrders]);
+
+  const desaGroups: DesaOrderGroup[] = useMemo(() => {
+    return groupOrdersByDesa(filteredOrders);
+  }, [filteredOrders]);
 
   const filteredRewards = (rewards || []).filter((r) => {
     const matchesCat = rewardCategoryFilter === 'all' || r.category === rewardCategoryFilter;
@@ -735,13 +770,84 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
     const prod = products.find((p) => p.id === prodId);
     if (!prod) return;
     const current = getProductPriceData(prod);
+    const updated = {
+      ...current,
+      [field]: value,
+    };
+
     setQuickPriceEdits((prev) => ({
       ...prev,
-      [prodId]: {
-        ...current,
-        [field]: value,
-      },
+      [prodId]: updated,
     }));
+
+    // Aturan Khusus: Deteksi harga perkilonya saja yang minimal ada keuntungan 500 rupiah.
+    // Jika di bawah 500 maka ada notif kemunculan harga nantinya.
+    // Dan juga kalau beli yang lainnya (non-kg: ikat, pcs, pack, buah, dll) tidak dipakaikan aturan ini.
+    if (isKgUnit(prod.unit)) {
+      const profit = updated.price - updated.cost_price;
+      const minRequired = smartConfig.defaultFloorMargin || 500;
+      if (updated.cost_price > 0 && updated.price > 0 && profit < minRequired) {
+        const step = smartConfig.roundingStep || 500;
+        const suggested = Math.max(updated.price, Math.ceil((updated.cost_price + minRequired) / step) * step);
+        setLowMarginAlert({
+          productId: prod.id,
+          productName: prod.name,
+          unit: prod.unit,
+          currentProfit: profit,
+          suggestedPrice: suggested,
+        });
+      } else if (lowMarginAlert?.productId === prod.id) {
+        setLowMarginAlert(null);
+      }
+    } else {
+      // Non-kg product: abaikan aturan ini
+      if (lowMarginAlert?.productId === prod.id) {
+        setLowMarginAlert(null);
+      }
+    }
+  };
+
+  // Helper untuk menerapkan varian eceran dari Kalkulator Ons ke Kg
+  const handleApplyRetailVariant = async (
+    targetProd: Product,
+    variantName: string,
+    retailPrice: number,
+    retailCost: number,
+    retailGrams: number
+  ) => {
+    try {
+      const currentVariants = targetProd.variants ? [...targetProd.variants] : [];
+      const existingIdx = currentVariants.findIndex(
+        (v) => (v.name || '').toLowerCase() === variantName.toLowerCase() || v.weight_g === retailGrams
+      );
+
+      const newVar: ProductVariant = {
+        id: existingIdx >= 0 ? currentVariants[existingIdx].id : `var_${Date.now()}_${retailGrams}g`,
+        name: variantName,
+        unit: 'ons',
+        unit_type: 'berat',
+        weight_g: retailGrams,
+        price: retailPrice,
+        cost_price: retailCost,
+      };
+
+      if (existingIdx >= 0) {
+        currentVariants[existingIdx] = newVar;
+      } else {
+        currentVariants.unshift(newVar);
+      }
+
+      await onUpdateProduct({
+        ...targetProd,
+        variants: currentVariants,
+      });
+
+      setPriceSaveSuccess(`Varian "${variantName}" (${formatRupiah(retailPrice)}) berhasil diterapkan ke ${targetProd.name}!`);
+      setTimeout(() => setPriceSaveSuccess(null), 3500);
+      onRefreshData();
+    } catch (e: any) {
+      alert('Gagal menerapkan varian: ' + (e.message || 'Error'));
+    }
   };
 
   // Helper for generating default variant templates with smart retail markups
@@ -1925,10 +2031,311 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
             ))}
           </div>
 
+          {/* Switch Tampilan: Satuan vs Kelompok Rute Kluster */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setOrderViewMode('list')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  orderViewMode === 'list'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📋 Tampilan Daftar ({filteredOrders.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderViewMode('clusters')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  orderViewMode === 'clusters'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-blue-700 hover:bg-blue-50'
+                }`}
+              >
+                <span>📍 Kelompok Kluster Wilayah ({clusterGroups.length} Rute)</span>
+                {clusterGroups.some((g) => g.isReadyForBatchDelivery) && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </button>
+            </div>
+
+            {orderViewMode === 'clusters' && (
+              <div className="flex items-center gap-1.5 bg-blue-50 p-1 rounded-xl border border-blue-200">
+                <button
+                  type="button"
+                  onClick={() => setClusterSubMode('desa')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    clusterSubMode === 'desa'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-blue-800 hover:bg-blue-100'
+                  }`}
+                >
+                  🌾 Kelompokkan Per Desa / Kelurahan ({desaGroups.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClusterSubMode('cluster')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    clusterSubMode === 'cluster'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-blue-800 hover:bg-blue-100'
+                  }`}
+                >
+                  🏥 Kelompokkan Per Kluster / Hub ({clusterGroups.length})
+                </button>
+              </div>
+            )}
+
+            <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+              <span className="text-emerald-600 font-bold">⚡ Rute Terurut Jarak (Anti-Loncat):</span>
+              <span>Stop 1 ➔ Stop N urut jalan tanpa putar balik</span>
+            </div>
+          </div>
+
           {filteredOrders.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center text-slate-400">
               <Package className="w-12 h-12 mx-auto mb-2 opacity-30" />
               <p className="text-sm font-semibold">Tidak ada pesanan PO pada filter ini</p>
+            </div>
+          ) : orderViewMode === 'clusters' ? (
+            /* TAMPILAN PENGELOMPOKAN WILAYAH & RUTE ANTI-LONCAT */
+            <div className="space-y-4">
+              {clusterSubMode === 'desa' ? (
+                /* 1. VIEW PENGELOMPOKAN PER DESA / KELURAHAN */
+                desaGroups.map((grp) => (
+                  <div
+                    key={grp.desaId}
+                    className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-sm transition-all hover:border-emerald-400"
+                  >
+                    {/* Header Desa */}
+                    <div className="p-4 bg-gradient-to-r from-emerald-50 via-slate-50 to-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black bg-emerald-100 text-emerald-900 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                            🌾 Desa / Kelurahan
+                          </span>
+                          <h3 className="font-black text-sm text-slate-900">{grp.desaName}</h3>
+                          <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                            Kec. {grp.kecamatan}
+                          </span>
+                          <span className="bg-emerald-600 text-white font-black text-xs px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                            <Truck className="w-3.5 h-3.5" />
+                            {grp.totalOrders} Paket Siap Antar
+                          </span>
+                        </div>
+                        <p className="text-xs text-emerald-800 font-semibold flex items-center gap-1.5">
+                          <span>⚡ Rute Anti-Loncat: Terurut dari titik terdekat dari Gudang JogoPawon</span>
+                        </p>
+                      </div>
+
+                      <div className="text-right flex items-center gap-4">
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Total Nilai Paket</div>
+                          <div className="font-mono font-black text-base text-emerald-700">
+                            {formatRupiah(grp.totalRevenue)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const routeText = `*RUTE PENGANTARAN JOGOPAWON (ANTI-LONCAT)*\nWilayah: Desa ${grp.desaName} (Kec. ${grp.kecamatan})\nTotal: ${grp.totalOrders} Pesanan (${formatRupiah(grp.totalRevenue)})\nTitik Awal: Gudang Distribusi Subuh JogoPawon\n--------------------------------\n\n` +
+                              grp.sequencedOrders.map((item) => {
+                                const distNote = item.stopNumber === 1 ? `${item.distanceFromPrevKm} km dari Gudang` : `+${Math.round(item.distanceFromPrevKm * 1000)} m dari Stop #${item.stopNumber - 1}`;
+                                return `[STOP #${item.stopNumber}] (${distNote})\nNo. Pesanan: ${item.order.order_number}\nPembeli    : ${item.order.customer_name} (${item.order.customer_phone})\nAlamat     : ${item.order.delivery_address}\nPatokan    : ${item.order.delivery_note || '-'}\nSlot Jam   : ${item.order.delivery_slot}\nTotal Bayar: ${formatRupiah(item.order.total_amount)}`;
+                              }).join('\n\n--------------------------------\n\n');
+                            navigator.clipboard.writeText(routeText);
+                            alert(`✅ Daftar Rute Anti-Loncat untuk Desa ${grp.desaName} berhasil disalin ke clipboard siap dikirim ke kurir!`);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm flex items-center gap-1.5 active:scale-95"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Salin Rute Anti-Loncat Kurir</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Daftar Pesanan Terurut Jarak */}
+                    <div className="divide-y divide-slate-100 p-2 space-y-2">
+                      {grp.sequencedOrders.map((item) => (
+                        <div
+                          key={item.order.id}
+                          onClick={() => setSelectedOrderForAddressModal(item.order)}
+                          className="p-3 rounded-xl hover:bg-emerald-50/40 transition-all cursor-pointer flex flex-wrap items-center justify-between gap-3 border border-slate-100 hover:border-emerald-300"
+                          title="Klik untuk lihat detail & verifikasi"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-black text-xs bg-emerald-600 text-white px-2.5 py-0.5 rounded-md shadow-2xs flex items-center gap-1">
+                                <span>Stop #{item.stopNumber}</span>
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                {item.stopNumber === 1
+                                  ? `📍 ${item.distanceFromPrevKm} km dari Gudang`
+                                  : `⚡ +${Math.round(item.distanceFromPrevKm * 1000)} m dari Stop #${item.stopNumber - 1}`}
+                              </span>
+                              <span className="font-mono font-black text-xs text-slate-800">{item.order.order_number}</span>
+                              {getStatusBadge(item.order.status)}
+                              <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
+                                {item.order.delivery_slot}
+                              </span>
+                            </div>
+                            <div className="text-xs font-bold text-slate-900">
+                              {item.order.customer_name} <span className="text-slate-500 font-normal">({item.order.customer_phone})</span>
+                            </div>
+                            <div className="text-xs text-slate-600 line-clamp-1 max-w-xl">
+                              📍 {item.order.delivery_address} {item.order.delivery_note ? `(${item.order.delivery_note})` : ''}
+                            </div>
+                          </div>
+
+                          <div className="text-right flex items-center gap-3">
+                            <div>
+                              <div className="font-mono font-black text-sm text-slate-900">
+                                {formatRupiah(item.order.total_amount)}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-medium">
+                                {item.order.items?.length || 0} macam sayur
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedOrderForAddressModal(item.order);
+                              }}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold"
+                            >
+                              Detail
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                /* 2. VIEW PENGELOMPOKAN PER KLUSTER / HUB */
+                clusterGroups.map((grp) => (
+                  <div
+                    key={grp.clusterId}
+                    className="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden shadow-sm transition-all hover:border-blue-400"
+                  >
+                    {/* Header Kluster */}
+                    <div className="p-4 bg-gradient-to-r from-blue-50 via-slate-50 to-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black bg-blue-100 text-blue-900 px-2.5 py-0.5 rounded-full border border-blue-200">
+                            {grp.badge}
+                          </span>
+                          <h3 className="font-black text-sm text-slate-900">{grp.clusterName}</h3>
+                          {grp.isReadyForBatchDelivery ? (
+                            <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 font-black text-xs px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              Siap Antar Barengan ({grp.totalOrders} Pesanan)
+                            </span>
+                          ) : (
+                            <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs px-2.5 py-0.5 rounded-full">
+                              ⏳ {grp.totalOrders}/{grp.minBatchOrders} Pesanan (Menunggu Kuota)
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-600 flex items-center gap-1.5">
+                          <span className="font-bold text-blue-800">Titik Kumpul Drop:</span>
+                          <span>{grp.pickupSuggestion}</span>
+                        </p>
+                      </div>
+
+                      <div className="text-right flex items-center gap-4">
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Total Omzet Rute</div>
+                          <div className="font-mono font-black text-base text-emerald-700">
+                            {formatRupiah(grp.totalRevenue)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const routeText = `*RUTE PENGANTARAN JOGOPAWON - ${grp.clusterName} (ANTI-LONCAT)*\nTitik Drop: ${grp.pickupSuggestion}\nTotal: ${grp.totalOrders} Pesanan (${formatRupiah(grp.totalRevenue)})\n--------------------------------\n\n` +
+                              (grp.sequencedOrders && grp.sequencedOrders.length > 0
+                                ? grp.sequencedOrders.map((item) => {
+                                    const distNote = item.stopNumber === 1 ? `${item.distanceFromPrevKm} km` : `+${Math.round(item.distanceFromPrevKm * 1000)} m`;
+                                    return `[STOP #${item.stopNumber}] (${distNote})\nNo. Pesanan: ${item.order.order_number}\nPembeli    : ${item.order.customer_name} (${item.order.customer_phone})\nAlamat     : ${item.order.delivery_address}\nPatokan    : ${item.order.delivery_note || '-'}\nSlot Jam   : ${item.order.delivery_slot}\nTotal Bayar: ${formatRupiah(item.order.total_amount)}`;
+                                  }).join('\n\n--------------------------------\n\n')
+                                : grp.orders.map((o: any, idx: number) => `${idx + 1}. ${o.order_number} - ${o.customer_name} (${o.customer_phone})\nAlamat: ${o.delivery_address}\nCatatan: ${o.delivery_note || '-'}\nTotal: ${formatRupiah(o.total_amount)}`).join('\n\n')
+                              );
+                            navigator.clipboard.writeText(routeText);
+                            alert(`✅ Daftar rute pengantaran kluster ${grp.clusterName} berhasil disalin ke clipboard!`);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm flex items-center gap-1.5 active:scale-95"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Salin Rute Anti-Loncat Kurir</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Daftar Pesanan di dalam Kluster Terurut Jarak */}
+                    <div className="divide-y divide-slate-100 p-2 space-y-2">
+                      {(grp.sequencedOrders && grp.sequencedOrders.length > 0 ? grp.sequencedOrders : grp.orders.map((o: any, i: number) => ({ order: o, stopNumber: i + 1, distanceFromPrevKm: 0, cumulativeDistanceKm: 0 }))).map((item: any) => (
+                        <div
+                          key={item.order.id}
+                          onClick={() => setSelectedOrderForAddressModal(item.order)}
+                          className="p-3 rounded-xl hover:bg-blue-50/40 transition-all cursor-pointer flex flex-wrap items-center justify-between gap-3 border border-slate-100 hover:border-blue-200"
+                          title="Klik untuk lihat detail & verifikasi"
+                        >
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-black text-xs bg-blue-600 text-white px-2.5 py-0.5 rounded-md shadow-2xs">
+                                Stop #{item.stopNumber}
+                              </span>
+                              {item.distanceFromPrevKm > 0 && (
+                                <span className="text-[10px] font-bold text-blue-900 bg-blue-100 px-2 py-0.5 rounded-md">
+                                  {item.stopNumber === 1
+                                    ? `📍 ${item.distanceFromPrevKm} km`
+                                    : `⚡ +${Math.round(item.distanceFromPrevKm * 1000)} m`}
+                                </span>
+                              )}
+                              <span className="font-mono font-black text-xs text-slate-800">{item.order.order_number}</span>
+                              {getStatusBadge(item.order.status)}
+                              <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2 py-0.5 rounded-md">
+                                {item.order.delivery_slot}
+                              </span>
+                            </div>
+                            <div className="text-xs font-bold text-slate-900">
+                              {item.order.customer_name} <span className="text-slate-500 font-normal">({item.order.customer_phone})</span>
+                            </div>
+                            <div className="text-xs text-slate-600 line-clamp-1 max-w-xl">
+                              📍 {item.order.delivery_address} {item.order.delivery_note ? `(${item.order.delivery_note})` : ''}
+                            </div>
+                          </div>
+
+                          <div className="text-right flex items-center gap-3">
+                            <div>
+                              <div className="font-mono font-black text-sm text-slate-900">
+                                {formatRupiah(item.order.total_amount)}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-medium">
+                                {item.order.items?.length || 0} macam sayur
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedOrderForAddressModal(item.order);
+                              }}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold"
+                            >
+                              Detail
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -3129,6 +3536,19 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       type="button"
+                      onClick={() => {
+                        setCalculatorTargetProduct(null);
+                        setIsKgOnsModalOpen(true);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+                      title="Kalkulator Konversi Laba Eceran (1 Ons ke 1 Kg)"
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                      <span>🧮 Kalkulator Laba Ons ke Kg</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => setIsSmartConfigModalOpen(true)}
                       className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold px-3 py-2 rounded-xl border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
                       title="Atur parameter ambang batas laba & pembulatan"
@@ -3142,7 +3562,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                       disabled={marginAnalysis.criticalCount === 0 || isSavingPrices}
                       onClick={handleApplySmartMarkupAll}
                       className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 text-slate-950 text-xs font-black px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer active:scale-95"
-                      title="Otomatis naikkan semua produk yang untungnya di bawah Rp 700 & bulatkan ke atas"
+                      title="Otomatis naikkan semua produk kiloan yang untungnya di bawah Rp 500 & bulatkan ke atas"
                     >
                       <Sparkles className="w-4 h-4" />
                       <span>Auto-Markup Semua ({marginAnalysis.criticalCount} Produk Tekor)</span>
@@ -3161,14 +3581,14 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-rose-300 uppercase tracking-wider">Tekor / Butuh Markup</span>
+                      <span className="text-[10px] font-bold text-rose-300 uppercase tracking-wider">Kiloan Tekor (&lt; Rp 500)</span>
                       {marginAnalysis.criticalCount > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />}
                     </div>
                     <span className="text-xl font-black text-rose-400 block mt-1">
                       {marginAnalysis.criticalCount} Produk
                     </span>
                     <span className="text-[10px] text-slate-400 mt-0.5 block">
-                      Laba &lt; Rp {smartConfig.defaultFloorMargin.toLocaleString('id-ID')} (Klik filter)
+                      Hanya Satuan Kg (Min Untung Rp 500)
                     </span>
                   </div>
 
@@ -3230,6 +3650,54 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                     >
                       Tampilkan Semua Produk
                     </button>
+                  </div>
+                )}
+
+                {/* NOTIFIKASI KEMUNCULAN HARGA (JIKA LABA KILOAN < RP 500) */}
+                {lowMarginAlert && (
+                  <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-amber-950 border-2 border-rose-500 p-3.5 rounded-2xl shadow-xl flex items-center justify-between flex-wrap gap-3 animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-white">
+                            ⚠️ NOTIFIKASI HARGA: Keuntungan Kiloan di Bawah Rp 500!
+                          </span>
+                          <span className="text-[10px] bg-rose-500 text-white font-bold px-2 py-0.2 rounded-md">
+                            Satuan: /{lowMarginAlert.unit}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-rose-200 mt-0.5">
+                          Produk <strong>{lowMarginAlert.productName}</strong> keuntungannya saat ini hanya{' '}
+                          <strong className="text-white underline">{formatRupiah(lowMarginAlert.currentProfit)}</strong> / kg. Batas minimal laba kiloan adalah{' '}
+                          <strong>Rp 500</strong>. Disarankan menaikkan harga menjadi{' '}
+                          <strong className="text-emerald-300">{formatRupiah(lowMarginAlert.suggestedPrice)}</strong>.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handlePriceFieldChange(lowMarginAlert.productId, 'price', lowMarginAlert.suggestedPrice);
+                          setLowMarginAlert(null);
+                        }}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black px-3.5 py-1.5 rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Terapkan Rp {lowMarginAlert.suggestedPrice.toLocaleString('id-ID')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLowMarginAlert(null)}
+                        className="p-1.5 text-rose-300 hover:text-white rounded-lg hover:bg-rose-800/50 cursor-pointer"
+                        title="Tutup notifikasi"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3412,29 +3880,29 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                                       +{formatRupiah(profit)}
                                     </span>
                                     <span
-                                      className="text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"
-                                      title={`Laba di bawah floor minimal Rp ${smartRes.floorMargin.toLocaleString('id-ID')}`}
+                                      className="text-[10px] font-black text-rose-800 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 animate-pulse"
+                                      title="Laba kiloan di bawah ambang batas minimal Rp 500/kg"
                                     >
                                       <AlertTriangle className="w-3 h-3 text-rose-600" />
-                                      Tekor (&lt; {formatRupiah(smartRes.floorMargin)})
+                                      Laba &lt; Rp 500/kg
                                     </span>
                                   </div>
-                                ) : profit >= 1000 ? (
+                                ) : isKgUnit(prod.unit) ? (
                                   <div className="space-y-0.5">
                                     <span className="font-black text-emerald-700 text-xs block">
                                       +{formatRupiah(profit)}
                                     </span>
                                     <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-full inline-block">
-                                      ✓ Sehat ({marginPercent.toFixed(1)}%)
+                                      ✓ Untung {formatRupiah(profit)}/kg
                                     </span>
                                   </div>
                                 ) : (
                                   <div className="space-y-0.5">
-                                    <span className="font-black text-amber-700 text-xs block">
+                                    <span className="font-black text-slate-800 text-xs block">
                                       +{formatRupiah(profit)}
                                     </span>
-                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full inline-block">
-                                      Pas ({marginPercent.toFixed(1)}%)
+                                    <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full inline-block">
+                                      /{prod.unit} ({marginPercent.toFixed(1)}%)
                                     </span>
                                   </div>
                                 )}
@@ -3498,6 +3966,21 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                                     <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 block animate-pulse">
                                       ⚡ Varian auto-update
                                     </span>
+                                  )}
+
+                                  {isKgUnit(prod.unit) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCalculatorTargetProduct(prod);
+                                        setIsKgOnsModalOpen(true);
+                                      }}
+                                      className="text-[10px] font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-lg flex items-center justify-center gap-1 mx-auto transition-colors shadow-2xs cursor-pointer"
+                                      title={`Hitung untung eceran 1 Ons ke 1 Kg untuk ${prod.name}`}
+                                    >
+                                      <Calculator className="w-3 h-3 text-emerald-600" />
+                                      <span>Hitung Ons/Kg</span>
+                                    </button>
                                   )}
 
                                   <button
@@ -5526,14 +6009,28 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
 
             {/* Smart Pricing Logic Guide Box */}
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 p-3.5 rounded-2xl border border-emerald-200/90 space-y-2 text-xs">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="font-black text-emerald-900 flex items-center gap-1.5">
                   <Calculator className="w-4 h-4 text-emerald-600" />
                   Rumus Cerdas: Beli Kiloan Murah (Grosir), Beli Eceran Sedikit Markup
                 </span>
-                <span className="text-[10px] font-bold bg-white text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200 shadow-2xs">
-                  Standar Pedagang Pasar Modern
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCalculatorTargetProduct(variantTargetProduct);
+                      setIsKgOnsModalOpen(true);
+                    }}
+                    className="text-[10px] font-black bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                    title="Buka kalkulator simulasi keuntungan 1 ons ke 1 kg"
+                  >
+                    <Calculator className="w-3 h-3" />
+                    <span>🧮 Kalkulator Laba Ons ➔ Kg</span>
+                  </button>
+                  <span className="text-[10px] font-bold bg-white text-emerald-800 px-2 py-0.5 rounded-md border border-emerald-200 shadow-2xs">
+                    Standar Pedagang Pasar Modern
+                  </span>
+                </div>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed">
                 Pembelian <strong>1 kg</strong> adalah harga dasar termurah per gram. Pembelian eceran diberi sedikit markup wajar untuk menutup biaya kantong plastik, tenaga menimbang, dan susut timbangan:
@@ -6815,6 +7312,26 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                 />
               </div>
 
+              {/* Parameter Khusus: Deteksi Hanya Produk Kiloan */}
+              <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-200/80 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="font-bold text-emerald-950 block text-xs">
+                      Deteksi Batas Laba Hanya untuk Satuan Kg
+                    </label>
+                    <p className="text-[11px] text-emerald-800/80">
+                      Aktif: Aturan minimal laba Rp {smartConfig.defaultFloorMargin.toLocaleString('id-ID')} hanya berlaku untuk produk /kg. Satuan non-kg (ikat, pack, pcs, dll) tidak dibatasi.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={smartConfig.onlyKgDetection}
+                    onChange={(e) => setSmartConfig({ ...smartConfig, onlyKgDetection: e.target.checked })}
+                    className="w-5 h-5 accent-emerald-600 rounded cursor-pointer shrink-0"
+                  />
+                </div>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                 <button
@@ -6822,7 +7339,7 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                   onClick={() => setSmartConfig(DEFAULT_SMART_CONFIG)}
                   className="text-slate-500 hover:text-slate-700 font-semibold text-xs cursor-pointer"
                 >
-                  Reset Default (Rp 700 / 500)
+                  Reset Default (Rp 500 / Khusus Kg)
                 </button>
 
                 <div className="flex items-center gap-2">
@@ -6968,6 +7485,18 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
           </div>
         </div>
       )}
+
+      {/* Modal Kalkulator Konversi Laba Eceran (Ons ke Kg) */}
+      <KgOnsProfitCalculatorModal
+        isOpen={isKgOnsModalOpen}
+        onClose={() => {
+          setIsKgOnsModalOpen(false);
+          setCalculatorTargetProduct(null);
+        }}
+        initialProduct={calculatorTargetProduct}
+        products={products}
+        onApplyRetailVariant={handleApplyRetailVariant}
+      />
 
       {/* Toast Notification Banner */}
       {rewardToast && (

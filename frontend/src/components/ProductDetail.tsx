@@ -26,10 +26,13 @@ import {
   Lock,
   Scale,
   Coins,
-  Play
+  Play,
+  Calculator,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
+import { isKgUnit } from '../utils/smartPricing';
+import { KgOnsProfitCalculatorModal } from './KgOnsProfitCalculatorModal';
 
 interface ProductDetailProps {
   product: Product;
@@ -80,6 +83,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
   // Selected variant state (e.g. 1 Ons, 1/4 kg, 1/2 kg, 3/4 kg, 1 kg)
   // Wajib tidak aktif otomatis di awal! User harus klik sendiri varian yang diinginkan.
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(false);
 
   useEffect(() => {
     setSelectedVariant(null);
@@ -187,8 +191,9 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
 
   const isOutOfStock = product.stock <= 0;
 
-  const formatRupiah = (val: number) => {
-    return 'Rp' + val.toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => {
+    const num = typeof val === 'string' ? parseFloat(val) : val;
+    return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   };
 
   const triggerToast = (msg: string) => {
@@ -242,11 +247,11 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
     try {
       const newRev = await api.addProductReview(product.id, {
         user_name: reviewerName.trim(),
+        user_phone: currentUser?.phone || undefined,
         location: reviewerLocation.trim() || 'Pelanggan JogoPawon',
         rating: reviewerRating,
         comment: reviewerComment.trim(),
         date: 'Baru saja',
-        verified_buyer: true,
         likes: 1,
       });
 
@@ -607,6 +612,32 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                     )}
                   </div>
 
+                  {/* Simulasi Kalkulator Laba Eceran 1 Ons vs 1 Kg */}
+                  {isKgUnit(product.unit) && (
+                    <div className="pt-2 flex items-center justify-between bg-emerald-50/70 p-2.5 rounded-2xl border border-emerald-200/80 text-xs gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-xl shrink-0">
+                          <Calculator className="w-4 h-4 text-emerald-700" />
+                        </span>
+                        <div className="truncate">
+                          <p className="font-bold text-emerald-950 text-[11px] leading-tight truncate">
+                            Kalkulator Laba Eceran (1 Ons ➔ 1 Kg)
+                          </p>
+                          <p className="text-[10px] text-emerald-800/80 truncate">
+                            Simulasi untung jual 1 Ons jika dikonversi ke 1 Kg
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCalculatorOpen(true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] px-3 py-1.5 rounded-xl shadow-2xs transition-all cursor-pointer shrink-0"
+                      >
+                        Buka Kalkulator
+                      </button>
+                    </div>
+                  )}
+
                   {/* Input Nominal Budget Bebas jika kartu ecer dipilih */}
                   {isCustomBudgetAllowed && isCustomBudgetMode && (
                     <motion.div
@@ -629,7 +660,7 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                         </span>
                         <input
                           type="number"
-                          step="500"
+                          step="1"
                           min={minBudget}
                           value={customBudgetAmount || ''}
                           onChange={(e) => {
@@ -639,6 +670,10 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
                           placeholder={minBudget.toString()}
                           className="w-full pl-10 pr-4 py-2.5 bg-white border border-amber-300 rounded-xl font-black text-base text-slate-900 focus:outline-emerald-600 shadow-2xs"
                         />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-amber-900 font-bold px-1">
+                        <span>Format Rupiah:</span>
+                        <span>{formatRupiah(customBudgetAmount || 0)}</span>
                       </div>
 
                       {/* Quick preset chips */}
@@ -1356,6 +1391,14 @@ export const ProductDetail: React.FC<ProductDetailProps> = ({
           </motion.button>
         </div>
       </div>
+
+      {/* Modal Kalkulator Konversi Laba Eceran (Ons ke Kg) */}
+      <KgOnsProfitCalculatorModal
+        isOpen={isCalculatorOpen}
+        onClose={() => setIsCalculatorOpen(false)}
+        initialProduct={product}
+        products={allProducts}
+      />
     </div>
   );
 };

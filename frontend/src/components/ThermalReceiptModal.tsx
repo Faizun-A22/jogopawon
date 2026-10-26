@@ -15,7 +15,7 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({ order,
   if (!order) return null;
 
   const isPaid = order.payment_status === 'paid';
-  const formatRupiah = (num: number) => (num || 0).toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => { const num = typeof val === 'string' ? parseFloat(val) : val; return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 
   const handlePrint = () => {
     window.print();

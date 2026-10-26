@@ -97,13 +97,22 @@ export const RewardConfirmationModal: React.FC<RewardConfirmationModalProps> = (
     setErrorMessage(null);
 
     try {
+      const deliveryNotes = [
+        recipientPhone.trim() && currentUser?.phone && recipientPhone.trim() !== currentUser.phone
+          ? `Penerima di lokasi: ${recipientName.trim()} (${recipientPhone.trim()})`
+          : '',
+        notes.trim(),
+      ]
+        .filter(Boolean)
+        .join('. ');
+
       const res = await api.redeemReward({
         reward_id: reward.id,
-        customer_name: recipientName.trim(),
-        customer_phone: recipientPhone.trim(),
+        customer_name: recipientName.trim() || currentUser?.name || 'Pelanggan JogoPawon',
+        customer_phone: currentUser?.phone || recipientPhone.trim(),
         delivery_option: deliveryOption,
         delivery_address: deliveryOption === 'antar_subuh' ? deliveryAddress.trim() : 'Ambil di Toko JogoPawon Mart',
-        notes: notes.trim(),
+        notes: deliveryNotes,
       });
 
       confetti({

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, Order, User, CartItem, DeliverySlot, ProductVariant, UserAddress } from '../types';
+import { findNearestCluster, PASURUAN_DELIVERY_CLUSTERS } from '../utils/deliveryCluster';
 import {
   ArrowLeft,
   Trash2,
@@ -102,6 +103,11 @@ export const CartPage: React.FC<CartPageProps> = ({
   }, [currentUser]);
 
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+  const [selectedCluster, setSelectedCluster] = useState<string>('');
+  const [isLocatingCartGPS, setIsLocatingCartGPS] = useState(false);
+  const [cartGpsStatus, setCartGpsStatus] = useState<string | null>(null);
+  const [cartLat, setCartLat] = useState<number | undefined>(undefined);
+  const [cartLng, setCartLng] = useState<number | undefined>(undefined);
   const [isChangingAddress, setIsChangingAddress] = useState(false);
 
   useEffect(() => {
@@ -117,6 +123,50 @@ export const CartPage: React.FC<CartPageProps> = ({
   }, [savedAddresses]);
 
   const activeAddress = savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0] || null;
+
+  // Auto-sync cluster from activeAddress in CartPage
+  useEffect(() => {
+    if (activeAddress?.delivery_cluster) {
+      setSelectedCluster(activeAddress.delivery_cluster);
+    } else if (activeAddress?.latitude && activeAddress?.longitude) {
+      const match = findNearestCluster(activeAddress.latitude, activeAddress.longitude);
+      if (match && match.isWithinRadius) {
+        setSelectedCluster(match.cluster.name);
+      }
+    }
+    if (activeAddress?.latitude) setCartLat(activeAddress.latitude);
+    if (activeAddress?.longitude) setCartLng(activeAddress.longitude);
+  }, [activeAddress]);
+
+  const handleGetCartGPS = () => {
+    if (!navigator.geolocation) {
+      alert('Browser perangkat Anda belum mendukung deteksi GPS.');
+      return;
+    }
+    setIsLocatingCartGPS(true);
+    setCartGpsStatus('Mendeteksi koordinat GPS lokasi pengantaran...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setCartLat(lat);
+        setCartLng(lng);
+        const match = findNearestCluster(lat, lng);
+        if (match && match.isWithinRadius) {
+          setSelectedCluster(match.cluster.name);
+          setCartGpsStatus(`📍 GPS Terkunci (${lat.toFixed(4)}, ${lng.toFixed(4)}) • Terhubung ke ${match.cluster.name}`);
+        } else {
+          setCartGpsStatus(`📍 GPS Terkunci: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        }
+        setIsLocatingCartGPS(false);
+      },
+      (err) => {
+        setCartGpsStatus('Gagal membaca GPS. Anda bisa memilih kluster secara manual di bawah.');
+        setIsLocatingCartGPS(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
   const hasValidAddress = Boolean(currentUser && activeAddress && activeAddress.address && activeAddress.address.trim().length >= 5);
 
   // Sinkronisasi tipe pengiriman berdasarkan stok
@@ -247,6 +297,7 @@ export const CartPage: React.FC<CartPageProps> = ({
         delivery_address: activeAddress.address.trim(),
         delivery_note: finalNote,
         delivery_date: poDate,
+        po_date: poDate,
         delivery_slot: selectedSlot,
         delivery_fee: deliveryFee,
         discount: 0,
@@ -713,6 +764,54 @@ export const CartPage: React.FC<CartPageProps> = ({
                           <span>{activeAddress.latitude && activeAddress.longitude ? '📍 Titik GPS Akurat (Cek Maps)' : '🗺️ Cek Lokasi di Google Maps'}</span>
                         </a>
                       </div>
+                    </div>
+
+                    {/* Kluster Pengantaran & Deteksi Lokasi GPS */}
+                    <div className="pt-2.5 border-t border-emerald-100 space-y-2">
+                      <div className="flex items-center justify-between gap-1">
+                        <label className="text-[11px] font-black text-slate-800 flex items-center gap-1">
+                          <span>📍 Kluster Rute Pengantaran Pasuruan:</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleGetCartGPS}
+                          disabled={isLocatingCartGPS}
+                          className="text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          <span>{isLocatingCartGPS ? 'Mencari...' : '🎯 GPS Sekarang'}</span>
+                        </button>
+                      </div>
+
+                      <select
+                        value={selectedCluster}
+                        onChange={(e) => setSelectedCluster(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-blue-50/70 border border-blue-200 text-xs font-bold text-blue-950 outline-none focus:ring-2 focus:ring-blue-400"
+                      >
+                        <option value="">-- Pengantaran Reguler / Deteksi Otomatis --</option>
+                        {PASURUAN_DELIVERY_CLUSTERS.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.badge} {c.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {cartGpsStatus && (
+                        <div className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 p-2 rounded-xl font-semibold flex items-center gap-1">
+                          <span>{cartGpsStatus}</span>
+                        </div>
+                      )}
+
+                      {selectedCluster && (
+                        <div className="text-[10px] text-blue-800 bg-blue-50 border border-blue-200 p-2 rounded-xl space-y-0.5">
+                          <div className="font-bold flex items-center gap-1">
+                            <span>✅ Rute Kluster Aktif:</span>
+                            <span>{selectedCluster}</span>
+                          </div>
+                          <div className="text-blue-700 leading-tight">
+                            Pesanan Anda digabungkan dengan rute kluster ini untuk efisiensi armada kurir subuh.
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Foto Rumah Thumbnail Kurir Subuh */}

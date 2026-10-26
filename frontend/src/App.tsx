@@ -4,7 +4,9 @@ import { Banner } from './components/Banner';
 import { ProductCard } from './components/ProductCard';
 import { CartModal } from './components/CartModal';
 import { OrderTrackingModal } from './components/OrderTrackingModal';
-import { AdminDashboard } from './components/AdminDashboard';
+const AdminDashboard = React.lazy(() =>
+  import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+);
 import { MobileCartBar } from './components/MobileCartBar';
 import { ProductDetail } from './components/ProductDetail';
 import { AuthModal } from './components/AuthModal';
@@ -134,6 +136,8 @@ export const App: React.FC = () => {
   const handleLogout = () => {
     localStorage.removeItem('jogopawon_customer_user');
     localStorage.removeItem('sayurgo_customer_user');
+    localStorage.removeItem('jogopawon_customer_token');
+    sessionStorage.removeItem('jogopawon_customer_token');
     setCurrentUser(null);
     handleBackToStore();
   };
@@ -407,12 +411,23 @@ export const App: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      const isAdm = checkIsAdminRoute();
+      const hasAdminToken = Boolean(
+        typeof window !== 'undefined' &&
+          (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token'))
+      );
+      const shouldFetchAdminData = isAdm && hasAdminToken;
+
       const [cats, prods, slots, ords, stats] = await Promise.all([
         api.getCategories().catch(() => []),
         api.getProducts().catch(() => []),
         api.getDeliverySlots().catch(() => []),
-        api.getAdminOrders().catch(() => []),
-        api.getAdminStats().catch(() => null),
+        shouldFetchAdminData
+          ? api.getAdminOrders().catch(() => [])
+          : currentUser?.phone
+          ? api.getCustomerOrders(currentUser.phone).catch(() => [])
+          : Promise.resolve([]),
+        shouldFetchAdminData ? api.getAdminStats().catch(() => null) : Promise.resolve(null),
       ]);
 
       if (cats.length > 0) setCategories(cats);
@@ -696,20 +711,30 @@ export const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
-          <AdminDashboard
-            orders={orders || []}
-            products={products || []}
-            categories={categories || []}
-            stats={adminStats}
-            onUpdateOrderStatus={handleUpdateOrderStatus}
-            onDeleteOrder={handleDeleteOrder}
-            onUpdateProduct={handleUpdateProduct}
-            onDeleteProduct={handleDeleteProduct}
-            onAddNewProduct={handleAddNewProduct}
-            onRefreshData={loadData}
-            newOrderAlert={newOrderAlert}
-            onDismissAlert={() => setNewOrderAlert(null)}
-          />
+          <React.Suspense
+            fallback={
+              <div className="min-h-[60vh] flex flex-col items-center justify-center p-8 text-center">
+                <div className="w-12 h-12 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4" />
+                <h3 className="text-slate-800 font-bold text-lg">Membuka Dashboard Dapur JogoPawon...</h3>
+                <p className="text-slate-500 text-sm mt-1">Memuat modul manajemen stok dan pesanan</p>
+              </div>
+            }
+          >
+            <AdminDashboard
+              orders={orders || []}
+              products={products || []}
+              categories={categories || []}
+              stats={adminStats}
+              onUpdateOrderStatus={handleUpdateOrderStatus}
+              onDeleteOrder={handleDeleteOrder}
+              onUpdateProduct={handleUpdateProduct}
+              onDeleteProduct={handleDeleteProduct}
+              onAddNewProduct={handleAddNewProduct}
+              onRefreshData={loadData}
+              newOrderAlert={newOrderAlert}
+              onDismissAlert={() => setNewOrderAlert(null)}
+            />
+          </React.Suspense>
         </main>
       </div>
     );

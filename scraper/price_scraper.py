@@ -76,7 +76,7 @@ DEFAULT_JOGOPAWON_BENCHMARK = {
         "unit": "kg",
     },
     "tomat": {
-        "product_id": "prod_wortel_brastagi",
+        "product_id": "prod_tomat_buah_segar",
         "name": "Tomat Buah Segar Super",
         "current_hpp": 7000.0,
         "current_sell_price": 11000.0,

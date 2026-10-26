@@ -9,7 +9,7 @@ set "GOROOT=%~dp0go_sdk\go"
 set "PATH=%~dp0go_sdk\go\bin;%PATH%"
 
 echo 1. Memulai Backend Golang (Port 8080)...
-start "JogoPawon Backend (Go Server)" cmd /k "cd /d %~dp0backend && server.exe"
+start "JogoPawon Backend (Go Server)" cmd /k "cd /d %~dp0backend && aplikasi-sayur-backend.exe"
 
 timeout /t 2 /nobreak >nul
 

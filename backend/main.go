@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -116,6 +118,7 @@ type Order struct {
 	Subtotal        float64     `json:"subtotal"`
 	DeliveryFee     float64     `json:"delivery_fee"`
 	Discount        float64     `json:"discount"`
+	PromoCode       string      `json:"promo_code,omitempty"`
 	TotalAmount     float64     `json:"total_amount"`
 	TotalProfit          float64     `json:"total_profit"` // Total laba bersih/kotor pesanan (omzet - HPP modal)
 	PointsEarned         int         `json:"points_earned"` // 7% dari keuntungan pesanan untuk pembeli
@@ -180,6 +183,7 @@ type Review struct {
 	ProductID     string   `json:"product_id"`
 	UserName      string   `json:"user_name"`
 	UserAvatar    string   `json:"user_avatar,omitempty"`
+	UserPhone     string   `json:"user_phone,omitempty"`
 	Location      string   `json:"location"`
 	Rating        int      `json:"rating"`
 	Comment       string   `json:"comment"`
@@ -218,6 +222,7 @@ type CustomerUser struct {
 	ReferredBy       string        `json:"referred_by,omitempty"` // Kode referral pengundang
 	ReferralEarnings int           `json:"referral_earnings"` // Total koin diperoleh dari belanja teman
 	ReferralCount    int           `json:"referral_count"` // Jumlah teman yang berhasil diajak
+	Token            string        `json:"token,omitempty"`
 	CreatedAt        time.Time     `json:"created_at"`
 }
 
@@ -393,15 +398,66 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func maskPhoneNumber(phone string) string {
+	p := strings.TrimSpace(phone)
+	if len(p) <= 6 {
+		return p
+	}
+	return p[:4] + "****" + p[len(p)-3:]
+}
+
+func maskCustomerName(name string) string {
+	n := strings.TrimSpace(name)
+	if len(n) <= 2 {
+		return n
+	}
+	runes := []rune(n)
+	if len(runes) <= 3 {
+		return string(runes[0]) + "**"
+	}
+	return string(runes[0]) + strings.Repeat("*", len(runes)-2) + string(runes[len(runes)-1])
+}
+
+func extractAuthToken(r *http.Request) string {
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			return strings.TrimSpace(parts[1])
+		} else if len(parts) == 1 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	if tok := strings.TrimSpace(r.Header.Get("X-Customer-Token")); tok != "" {
+		return tok
+	}
+	if tok := strings.TrimSpace(r.Header.Get("X-Admin-Token")); tok != "" {
+		return tok
+	}
+	if tok := strings.TrimSpace(r.URL.Query().Get("token")); tok != "" {
+		return tok
+	}
+	if tok := strings.TrimSpace(r.URL.Query().Get("admin_token")); tok != "" {
+		return tok
+	}
+	return ""
+}
+
+type WSClientInfo struct {
+	conn    *websocket.Conn
+	isAdmin bool
+	phone   string
+}
+
 type Hub struct {
-	clients   map[*websocket.Conn]bool
+	clients   map[*websocket.Conn]WSClientInfo
 	broadcast chan WSMessage
 	mutex     sync.Mutex
 }
 
 func newHub() *Hub {
 	return &Hub{
-		clients:   make(map[*websocket.Conn]bool),
+		clients:   make(map[*websocket.Conn]WSClientInfo),
 		broadcast: make(chan WSMessage),
 	}
 }
@@ -409,11 +465,96 @@ func newHub() *Hub {
 func (h *Hub) run() {
 	for msg := range h.broadcast {
 		h.mutex.Lock()
-		for client := range h.clients {
-			err := client.WriteJSON(msg)
-			if err != nil {
-				client.Close()
-				delete(h.clients, client)
+		for client, info := range h.clients {
+			targetMsg := msg
+			shouldSend := true
+
+			switch msg.Event {
+			case "NEW_ORDER", "ORDER_STATUS_UPDATED":
+				// Jika client adalah admin, kirim data pesanan lengkap
+				if info.isAdmin {
+					targetMsg = msg
+				} else {
+					var orderPhone string
+					switch ord := msg.Payload.(type) {
+					case Order:
+						orderPhone = ord.CustomerPhone
+						if info.phone != "" && normalizePhone(info.phone) == normalizePhone(orderPhone) {
+							targetMsg = msg
+						} else {
+							sanitized := ord
+							sanitized.CustomerPhone = maskPhoneNumber(ord.CustomerPhone)
+							sanitized.CustomerName = maskCustomerName(ord.CustomerName)
+							sanitized.DeliveryAddress = "Pasuruan (Area Desa/Kluster)"
+							sanitized.DeliveryNote = ""
+							sanitized.HousePhotoURL = ""
+							sanitized.PaymentProofURL = ""
+							targetMsg = WSMessage{Event: msg.Event, Payload: sanitized}
+						}
+					case *Order:
+						if ord != nil {
+							orderPhone = ord.CustomerPhone
+							if info.phone != "" && normalizePhone(info.phone) == normalizePhone(orderPhone) {
+								targetMsg = msg
+							} else {
+								sanitized := *ord
+								sanitized.CustomerPhone = maskPhoneNumber(ord.CustomerPhone)
+								sanitized.CustomerName = maskCustomerName(ord.CustomerName)
+								sanitized.DeliveryAddress = "Pasuruan (Area Desa/Kluster)"
+								sanitized.DeliveryNote = ""
+								sanitized.HousePhotoURL = ""
+								sanitized.PaymentProofURL = ""
+								targetMsg = WSMessage{Event: msg.Event, Payload: sanitized}
+							}
+						}
+					}
+				}
+
+			case "USER_UPDATED":
+				// PII Profil User: Hanya kirim ke Admin atau pemilik akun sendiri
+				if info.isAdmin {
+					targetMsg = msg
+				} else {
+					var uPhone string
+					switch u := msg.Payload.(type) {
+					case CustomerUser:
+						uPhone = u.Phone
+					case *CustomerUser:
+						if u != nil {
+							uPhone = u.Phone
+						}
+					}
+					if info.phone == "" || normalizePhone(info.phone) != normalizePhone(uPhone) {
+						shouldSend = false
+					}
+				}
+
+			case "NEW_REWARD_REDEMPTION":
+				// Klaim hadiah hanya untuk Admin atau pemilik akun sendiri
+				if info.isAdmin {
+					targetMsg = msg
+				} else {
+					var rPhone string
+					switch rdm := msg.Payload.(type) {
+					case RewardRedemption:
+						rPhone = rdm.CustomerPhone
+					case *RewardRedemption:
+						if rdm != nil {
+							rPhone = rdm.CustomerPhone
+						}
+					}
+					if info.phone == "" || normalizePhone(info.phone) != normalizePhone(rPhone) {
+						shouldSend = false
+					}
+				}
+			}
+
+			if shouldSend {
+				err := client.WriteJSON(targetMsg)
+				if err != nil {
+					client.Close()
+					delete(h.clients, client)
+				}
 			}
 		}
 		h.mutex.Unlock()
@@ -429,11 +570,15 @@ func (h *Hub) Broadcast(event string, payload interface{}) {
 	}
 }
 
-func (h *Hub) register(conn *websocket.Conn) {
+func (h *Hub) register(conn *websocket.Conn, isAdmin bool, phone string) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	h.clients[conn] = true
-	log.Printf("[WebSocket] Client terhubung. Total client aktif: %d\n", len(h.clients))
+	h.clients[conn] = WSClientInfo{
+		conn:    conn,
+		isAdmin: isAdmin,
+		phone:   normalizePhone(phone),
+	}
+	log.Printf("[WebSocket] Client terhubung (Admin: %t, Phone: %s). Total client aktif: %d\n", isAdmin, phone, len(h.clients))
 }
 
 func (h *Hub) unregister(conn *websocket.Conn) {
@@ -505,16 +650,70 @@ func generateReferralCode(name, phone string) string {
 	return code.String()
 }
 
-func (s *Store) saveUsersToDisk() {
-	dataDir := "data"
+type StoredCustomerUser struct {
+	ID               string        `json:"id"`
+	Name             string        `json:"name"`
+	Phone            string        `json:"phone"`
+	Email            string        `json:"email,omitempty"`
+	PasswordHash     string        `json:"password_hash,omitempty"`
+	Salt             string        `json:"salt,omitempty"`
+	Address          string        `json:"address,omitempty"`
+	Landmark         string        `json:"landmark,omitempty"`
+	Note             string        `json:"note,omitempty"`
+	AvatarURL        string        `json:"avatar_url,omitempty"`
+	HousePhotoURL    string        `json:"house_photo_url,omitempty"`
+	SavedAddresses   []UserAddress `json:"saved_addresses,omitempty"`
+	Points           int           `json:"points"`
+	ReferralCode     string        `json:"referral_code"`
+	ReferredBy       string        `json:"referred_by,omitempty"`
+	ReferralEarnings int           `json:"referral_earnings"`
+	ReferralCount    int           `json:"referral_count"`
+	CreatedAt        time.Time     `json:"created_at"`
+}
+
+func saveJSONAtomic(filePath string, v interface{}) {
+	dataDir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return
 	}
-	filePath := filepath.Join(dataDir, "users.json")
-	bytes, err := json.MarshalIndent(s.users, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
+	bytes, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return
 	}
+	tmpPath := filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, bytes, 0644); err == nil {
+		_ = os.Rename(tmpPath, filePath)
+	}
+}
+
+func (s *Store) saveUsersToDisk() {
+	filePath := filepath.Join("data", "users.json")
+	s.mutex.RLock()
+	storedList := make([]StoredCustomerUser, len(s.users))
+	for i, u := range s.users {
+		storedList[i] = StoredCustomerUser{
+			ID:               u.ID,
+			Name:             u.Name,
+			Phone:            u.Phone,
+			Email:            u.Email,
+			PasswordHash:     u.PasswordHash,
+			Salt:             u.Salt,
+			Address:          u.Address,
+			Landmark:         u.Landmark,
+			Note:             u.Note,
+			AvatarURL:        u.AvatarURL,
+			HousePhotoURL:    u.HousePhotoURL,
+			SavedAddresses:   u.SavedAddresses,
+			Points:           u.Points,
+			ReferralCode:     u.ReferralCode,
+			ReferredBy:       u.ReferredBy,
+			ReferralEarnings: u.ReferralEarnings,
+			ReferralCount:    u.ReferralCount,
+			CreatedAt:        u.CreatedAt,
+		}
+	}
+	s.mutex.RUnlock()
+	saveJSONAtomic(filePath, storedList)
 }
 
 func (s *Store) loadUsersFromDisk() {
@@ -523,10 +722,30 @@ func (s *Store) loadUsersFromDisk() {
 	if err != nil {
 		return
 	}
-	var loadedUsers []CustomerUser
+	var loadedUsers []StoredCustomerUser
 	if err := json.Unmarshal(bytes, &loadedUsers); err == nil && len(loadedUsers) > 0 {
 		s.mutex.Lock()
-		for _, u := range loadedUsers {
+		for _, su := range loadedUsers {
+			u := CustomerUser{
+				ID:               su.ID,
+				Name:             su.Name,
+				Phone:            su.Phone,
+				Email:            su.Email,
+				PasswordHash:     su.PasswordHash,
+				Salt:             su.Salt,
+				Address:          su.Address,
+				Landmark:         su.Landmark,
+				Note:             su.Note,
+				AvatarURL:        su.AvatarURL,
+				HousePhotoURL:    su.HousePhotoURL,
+				SavedAddresses:   su.SavedAddresses,
+				Points:           su.Points,
+				ReferralCode:     su.ReferralCode,
+				ReferredBy:       su.ReferredBy,
+				ReferralEarnings: su.ReferralEarnings,
+				ReferralCount:    su.ReferralCount,
+				CreatedAt:        su.CreatedAt,
+			}
 			if u.ReferralCode == "" {
 				u.ReferralCode = generateReferralCode(u.Name, u.Phone)
 			}
@@ -547,15 +766,11 @@ func (s *Store) loadUsersFromDisk() {
 }
 
 func (s *Store) saveOrdersToDisk() {
-	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return
-	}
-	filePath := filepath.Join(dataDir, "orders.json")
-	bytes, err := json.MarshalIndent(s.orders, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copyList := make([]Order, len(s.orders))
+	copy(copyList, s.orders)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "orders.json"), copyList)
 }
 
 func (s *Store) loadOrdersFromDisk() {
@@ -585,15 +800,11 @@ func (s *Store) loadOrdersFromDisk() {
 }
 
 func (s *Store) saveProductsToDisk() {
-	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return
-	}
-	filePath := filepath.Join(dataDir, "products.json")
-	bytes, err := json.MarshalIndent(s.products, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copyList := make([]Product, len(s.products))
+	copy(copyList, s.products)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "products.json"), copyList)
 }
 
 func normalizeImageURL(rawURL string) string {
@@ -662,15 +873,11 @@ func (s *Store) loadProductsFromDisk() {
 }
 
 func (s *Store) saveRewardsToDisk() {
-	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return
-	}
-	filePath := filepath.Join(dataDir, "rewards.json")
-	bytes, err := json.MarshalIndent(s.rewards, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copyList := make([]RewardItem, len(s.rewards))
+	copy(copyList, s.rewards)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "rewards.json"), copyList)
 }
 
 func (s *Store) loadRewardsFromDisk() {
@@ -692,15 +899,11 @@ func (s *Store) loadRewardsFromDisk() {
 }
 
 func (s *Store) saveRedemptionsToDisk() {
-	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return
-	}
-	filePath := filepath.Join(dataDir, "redemptions.json")
-	bytes, err := json.MarshalIndent(s.rewardRedemptions, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copyList := make([]RewardRedemption, len(s.rewardRedemptions))
+	copy(copyList, s.rewardRedemptions)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "redemptions.json"), copyList)
 }
 
 func (s *Store) loadRedemptionsFromDisk() {
@@ -719,15 +922,11 @@ func (s *Store) loadRedemptionsFromDisk() {
 }
 
 func (s *Store) saveCouriersToDisk() {
-	dataDir := "data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return
-	}
-	filePath := filepath.Join(dataDir, "couriers.json")
-	bytes, err := json.MarshalIndent(s.couriers, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copyList := make([]Courier, len(s.couriers))
+	copy(copyList, s.couriers)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "couriers.json"), copyList)
 }
 
 func (s *Store) loadCouriersFromDisk() {
@@ -745,16 +944,41 @@ func (s *Store) loadCouriersFromDisk() {
 	}
 }
 
+func (s *Store) saveReviewsToDisk() {
+	s.mutex.RLock()
+	copyList := make([]Review, len(s.reviews))
+	copy(copyList, s.reviews)
+	s.mutex.RUnlock()
+	saveJSONAtomic(filepath.Join("data", "reviews.json"), copyList)
+}
+
+func (s *Store) loadReviewsFromDisk() {
+	filePath := filepath.Join("data", "reviews.json")
+	bytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return
+	}
+	var loaded []Review
+	if err := json.Unmarshal(bytes, &loaded); err == nil && len(loaded) > 0 {
+		s.mutex.Lock()
+		s.reviews = loaded
+		s.mutex.Unlock()
+		log.Printf("[Storage] Berhasil memuat %d ulasan produk dari penyimpanan lokal.\n", len(loaded))
+	}
+}
+
 func (s *Store) saveCashTxToDisk() {
 	dataDir := "data"
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return
 	}
 	filePath := filepath.Join(dataDir, "cash_tx.json")
-	bytes, err := json.MarshalIndent(s.cashTransactions, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copied := make([]CashTransaction, len(s.cashTransactions))
+	copy(copied, s.cashTransactions)
+	s.mutex.RUnlock()
+
+	saveJSONAtomic(filePath, copied)
 }
 
 func (s *Store) loadCashTxFromDisk() {
@@ -778,10 +1002,12 @@ func (s *Store) saveWasteToDisk() {
 		return
 	}
 	filePath := filepath.Join(dataDir, "waste.json")
-	bytes, err := json.MarshalIndent(s.wasteRecords, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copied := make([]WasteRecord, len(s.wasteRecords))
+	copy(copied, s.wasteRecords)
+	s.mutex.RUnlock()
+
+	saveJSONAtomic(filePath, copied)
 }
 
 func (s *Store) loadWasteFromDisk() {
@@ -805,10 +1031,12 @@ func (s *Store) saveScraperToDisk() {
 		return
 	}
 	filePath := filepath.Join(dataDir, "scraper.json")
-	bytes, err := json.MarshalIndent(s.scrapedPrices, "", "  ")
-	if err == nil {
-		_ = os.WriteFile(filePath, bytes, 0644)
-	}
+	s.mutex.RLock()
+	copied := make([]ScrapedPriceItem, len(s.scrapedPrices))
+	copy(copied, s.scrapedPrices)
+	s.mutex.RUnlock()
+
+	saveJSONAtomic(filePath, copied)
 
 	// Sinkronkan ke database PostgreSQL jika aktif
 	if s.db != nil {
@@ -835,7 +1063,7 @@ func (s *Store) saveScraperToDisk() {
 					it.IsVerified, it.IsAnomalyRisk, it.RiskReason, it.CreatedAt,
 				)
 			}
-		}(s.scrapedPrices)
+		}(copied)
 	}
 }
 
@@ -988,6 +1216,7 @@ func newStore(db *sql.DB) *Store {
 	s.loadUsersFromDisk()
 	s.loadOrdersFromDisk()
 	s.loadScraperFromDisk()
+	s.loadReviewsFromDisk()
 	s.loadUsersFromDB()
 	s.loadOrdersFromDB()
 	s.loadRewardsFromDB()
@@ -1268,15 +1497,17 @@ func (s *Store) seedDefaultData() {
 // ==========================================
 
 type App struct {
-	store *Store
-	hub   *Hub
+	store          *Store
+	hub            *Hub
+	adminTokens    sync.Map
+	customerTokens sync.Map
 }
 
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Customer-Token, X-Admin-Token")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -1293,6 +1524,15 @@ func (a *App) handleCategories(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(a.store.categories)
 	case http.MethodPost:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menambah kategori",
+			})
+			return
+		}
 		var c Category
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1320,6 +1560,15 @@ func (a *App) handleDeliverySlots(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(a.store.deliverySlots)
 	case http.MethodPost:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menambah slot pengiriman",
+			})
+			return
+		}
 		var s DeliverySlot
 		if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1347,6 +1596,15 @@ func (a *App) handleCouriers(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(a.store.couriers)
 	case http.MethodPost:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menambah kurir",
+			})
+			return
+		}
 		var c Courier
 		if err := json.NewDecoder(r.Body).Decode(&c); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1387,6 +1645,15 @@ func (a *App) handleProducts(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(filtered)
 
 	case http.MethodPost:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menambah produk",
+			})
+			return
+		}
 		var newProd Product
 		if err := json.NewDecoder(r.Body).Decode(&newProd); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1462,6 +1729,15 @@ func (a *App) handleProductDetail(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(found)
 
 	case http.MethodPut:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat mengubah data produk",
+			})
+			return
+		}
 		var updated Product
 		if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1502,6 +1778,15 @@ func (a *App) handleProductDetail(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(updated)
 
 	case http.MethodDelete:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menghapus produk",
+			})
+			return
+		}
 		a.store.mutex.Lock()
 		idx := -1
 		for i, p := range a.store.products {
@@ -1619,6 +1904,16 @@ func (a *App) handleBulkUpdatePrices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !a.validateAdminRequest(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Akses ditolak: Hanya pengelola/admin yang dapat memperbarui harga massal",
+		})
+		return
+	}
+
 	var updates []BulkPriceUpdateItem
 	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1702,15 +1997,61 @@ func (a *App) handleProductReviews(w http.ResponseWriter, r *http.Request, produ
 		if rev.Rating < 1 || rev.Rating > 5 {
 			rev.Rating = 5
 		}
-		rev.VerifiedBuyer = true
 		if rev.Likes == 0 {
 			rev.Likes = 1
 		}
 
+		// Keamanan & Integritas Ulasan (P3.1): Verifikasi Pembeli Asli (Verified Buyer)
+		tok := strings.TrimSpace(r.Header.Get("X-Customer-Token"))
+		if tok == "" {
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tok = strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+			}
+		}
+
+		userPhone := ""
+		if tok != "" {
+			_, phone, valid := a.validateCustomerToken(tok)
+			if valid {
+				userPhone = phone
+			}
+		}
+		if userPhone == "" && rev.UserPhone != "" {
+			userPhone = rev.UserPhone
+		}
+
+		userPhone = normalizePhone(userPhone)
+		rev.UserPhone = userPhone
+
+		// Periksa riwayat pesanan: pembeli asli jika nomor HP memiliki pesanan sukses berisi produk ini
+		isVerifiedBuyer := false
+		if userPhone != "" {
+			a.store.mutex.RLock()
+			for _, ord := range a.store.orders {
+				if normalizePhone(ord.CustomerPhone) == userPhone {
+					st := strings.ToLower(strings.TrimSpace(ord.Status))
+					if st == "completed" || st == "delivered" || st == "selesai" || st == "shipped" || st == "dikirim" {
+						for _, item := range ord.Items {
+							if item.ProductID == productID {
+								isVerifiedBuyer = true
+								break
+							}
+						}
+					}
+				}
+				if isVerifiedBuyer {
+					break
+				}
+			}
+			a.store.mutex.RUnlock()
+		}
+		rev.VerifiedBuyer = isVerifiedBuyer
+
 		a.store.mutex.Lock()
 		a.store.reviews = append([]Review{rev}, a.store.reviews...)
 
-		// Recalculate average rating of the product
+		// Hitung ulang rating rata-rata produk
 		var totalRating float64
 		var count int
 		for _, r := range a.store.reviews {
@@ -1730,6 +2071,24 @@ func (a *App) handleProductReviews(w http.ResponseWriter, r *http.Request, produ
 			}
 		}
 		a.store.mutex.Unlock()
+
+		// Simpan permanen ke disk
+		a.store.saveReviewsToDisk()
+
+		// Sinkronkan ke database PostgreSQL jika aktif
+		if a.store.db != nil {
+			go func(rv Review) {
+				_, _ = a.store.db.Exec(`
+					INSERT INTO reviews (id, product_id, user_name, user_phone, user_avatar, location, rating, comment, date, verified_buyer, likes, created_at)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+					ON CONFLICT (id) DO UPDATE SET
+						rating = EXCLUDED.rating,
+						comment = EXCLUDED.comment,
+						verified_buyer = EXCLUDED.verified_buyer,
+						likes = EXCLUDED.likes;
+				`, rv.ID, rv.ProductID, rv.UserName, rv.UserPhone, rv.UserAvatar, rv.Location, rv.Rating, rv.Comment, rv.Date, rv.VerifiedBuyer, rv.Likes)
+			}(rev)
+		}
 
 		if updatedProd.ID != "" {
 			a.hub.broadcast <- WSMessage{
@@ -1817,6 +2176,19 @@ func calculateStockDeduction(prod Product, item OrderItem) float64 {
 	return float64(item.Quantity)
 }
 
+func (a *App) handleAdminOrdersList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	a.store.mutex.RLock()
+	defer a.store.mutex.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(a.store.orders)
+}
+
 func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1826,6 +2198,20 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 		phone := strings.TrimSpace(r.URL.Query().Get("phone"))
 		if phone != "" {
 			norm := normalizePhone(phone)
+			isAdmin := a.validateAdminRequest(r)
+			if !isAdmin {
+				tok := extractAuthToken(r)
+				_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+				if !isCustomer || normalizePhone(tokenPhone) != norm {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "Akses ditolak: Autentikasi sesi akun diperlukan untuk melihat riwayat pesanan nomor ini",
+					})
+					return
+				}
+			}
 			var userOrders []Order
 			for _, o := range a.store.orders {
 				if normalizePhone(o.CustomerPhone) == norm {
@@ -1833,10 +2219,25 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			w.Header().Set("Content-Type", "application/json")
+			if userOrders == nil {
+				userOrders = []Order{}
+			}
 			json.NewEncoder(w).Encode(userOrders)
 			return
 		}
 
+		// Keamanan PII: Tanpa parameter phone, request publik DILARANG KERAS melihat pesanan orang lain
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Parameter 'phone' wajib disertakan untuk melihat riwayat pesanan Anda, atau login sebagai administrator.",
+			})
+			return
+		}
+
+		// Hanya administrator terautentikasi (Bearer token) yang diizinkan melihat semua pesanan
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(a.store.orders)
 
@@ -1855,7 +2256,9 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 		req.CreatedAt = now
 		req.UpdatedAt = now
 		req.Status = "pending"
-		if req.PODate == "" {
+		if req.PODate == "" && req.DeliveryDate != "" {
+			req.PODate = req.DeliveryDate
+		} else if req.PODate == "" {
 			req.PODate = now.Add(24 * time.Hour).Format("2006-01-02")
 		}
 		if req.DeliveryDate == "" {
@@ -1868,47 +2271,122 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 			req.PaymentStatus = "unpaid"
 		}
 
-		var calcSubtotal float64
-		var calcProfit float64
+		if len(req.Items) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Keranjang belanja tidak boleh kosong"})
+			return
+		}
+
+		// KEAMANAN KRITIS: Cegah Manipulasi Harga & Diskon (Client-Side Price Tampering)
+		// 1. Ambil seluruh data produk resmi dari database server (a.store.products)
 		a.store.mutex.RLock()
-		prodCostMap := make(map[string]float64)
+		prodMap := make(map[string]Product)
 		for _, p := range a.store.products {
-			prodCostMap[p.ID] = p.CostPrice
+			prodMap[p.ID] = p
 		}
 		a.store.mutex.RUnlock()
 
-		for i := range req.Items {
-			req.Items[i].ID = fmt.Sprintf("item_%d_%d", now.UnixNano(), i)
-			req.Items[i].OrderID = req.ID
-			req.Items[i].Subtotal = req.Items[i].Price * float64(req.Items[i].Quantity)
-			calcSubtotal += req.Items[i].Subtotal
+		var calcSubtotal float64
+		var calcProfit float64
 
-			// Tentukan HPP / modal barang asli
-			cost := req.Items[i].CostPrice
-			if cost == 0 {
-				cost = prodCostMap[req.Items[i].ProductID]
-				if cost == 0 {
-					cost = req.Items[i].Price * 0.7 // fallback estimasi modal 70%
-				}
-				req.Items[i].CostPrice = cost
+		for i := range req.Items {
+			item := &req.Items[i]
+			if item.Quantity <= 0 {
+				item.Quantity = 1
 			}
 
-			// Hitung keuntungan bersih item
-			if req.Items[i].Price > cost {
-				unitProfit := req.Items[i].Price - cost
-				calcProfit += unitProfit * float64(req.Items[i].Quantity)
+			item.ID = fmt.Sprintf("item_%d_%d", now.UnixNano(), i)
+			item.OrderID = req.ID
+
+			prod, exists := prodMap[item.ProductID]
+			if !exists && a.store.db != nil {
+				var p Product
+				var disc, cost sql.NullFloat64
+				var varsRaw sql.NullString
+				err := a.store.db.QueryRow(`
+					SELECT id, name, category_id, price, COALESCE(cost_price, 0), COALESCE(discount_price, 0), unit, stock, description, image_url, COALESCE(variants::text, '[]')
+					FROM products WHERE id = $1 LIMIT 1
+				`, item.ProductID).Scan(&p.ID, &p.Name, &p.CategoryID, &p.Price, &cost, &disc, &p.Unit, &p.Stock, &p.Description, &p.ImageURL, &varsRaw)
+				if err == nil && p.ID != "" {
+					if cost.Valid { p.CostPrice = cost.Float64 }
+					if disc.Valid { p.DiscountPrice = disc.Float64 }
+					if varsRaw.Valid && varsRaw.String != "" {
+						_ = json.Unmarshal([]byte(varsRaw.String), &p.Variants)
+					}
+					prod = p
+					exists = true
+				}
+			}
+
+			if !exists {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": fmt.Sprintf("Produk '%s' tidak ditemukan dalam katalog resmi JogoPawon", item.ProductName),
+				})
+				return
+			}
+
+			var officialPrice float64
+			var officialCost float64
+			var officialUnit string = prod.Unit
+			matchedVariant := false
+
+			// Cek varian berat / kemasan resmi
+			if item.VariantName != "" && len(prod.Variants) > 0 {
+				for _, v := range prod.Variants {
+					if strings.EqualFold(v.Name, item.VariantName) || v.ID == item.VariantName {
+						officialPrice = v.Price
+						officialCost = v.CostPrice
+						officialUnit = v.Name
+						matchedVariant = true
+						break
+					}
+				}
+			}
+
+			if !matchedVariant {
+				if prod.DiscountPrice > 0 {
+					officialPrice = prod.DiscountPrice
+				} else {
+					officialPrice = prod.Price
+				}
+				officialCost = prod.CostPrice
+			}
+
+			if officialCost <= 0 {
+				officialCost = officialPrice * 0.7
+			}
+
+			// KEAMANAN: Timpa (override) seluruh data harga dari klien dengan harga resmi server
+			item.ProductName = prod.Name
+			item.ProductImage = prod.ImageURL
+			item.Unit = officialUnit
+			item.Price = officialPrice
+			item.CostPrice = officialCost
+			item.Subtotal = officialPrice * float64(item.Quantity)
+
+			calcSubtotal += item.Subtotal
+
+			if officialPrice > officialCost {
+				unitProfit := officialPrice - officialCost
+				calcProfit += unitProfit * float64(item.Quantity)
 			}
 		}
+
 		req.Subtotal = calcSubtotal
 
-		// Tentukan kelayakan gratis ongkir:
-		// 1. Akun dengan usia pendaftaran <= 1 bulan (30 hari)
+		// KUNCI MUTEX: Cegah Data Race pada seluruh pembacaan & mutasi a.store.users, a.store.rewards, a.store.orders, a.store.cashTransactions, a.store.products
+		a.store.mutex.Lock()
+
+		// Tentukan kelayakan gratis ongkir resmi:
+		// 1. Akun dengan usia pendaftaran <= 30 hari
 		// 2. Belanja >= Rp 35.000
-		// 3. Atau frontend mengirimkan DeliveryFee = 0 dengan diskon/promo
-		isFreeDelivery := req.DeliveryFee == 0 && (req.Discount > 0 || req.Subtotal >= 35000)
+		isFreeDelivery := req.Subtotal >= 35000
 		if !isFreeDelivery && req.CustomerPhone != "" {
 			for _, u := range a.store.users {
-				if u.Phone == req.CustomerPhone {
+				if normalizePhone(u.Phone) == req.CustomerPhone {
 					if time.Since(u.CreatedAt) <= 30*24*time.Hour || u.CreatedAt.IsZero() {
 						isFreeDelivery = true
 					}
@@ -1919,12 +2397,49 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 
 		if isFreeDelivery {
 			req.DeliveryFee = 0
-			// Jika gratis ongkir berasal dari subsidi ongkir hemat (bukan kupon diskon produk/voucher),
-			// discount disetel 0 agar tidak memotong subtotal produk lagi
-			req.Discount = 0
 		} else if req.DeliveryFee <= 0 {
 			req.DeliveryFee = 500 // Standar ongkir hemat Pasuruan Rp 500
 		}
+
+		// KEAMANAN KRITIS: Validasi Nilai Diskon & Kode Promo Independen di Backend
+		var validatedDiscount float64 = 0
+		cleanPromo := strings.ToUpper(strings.TrimSpace(req.PromoCode))
+
+		if cleanPromo != "" {
+			switch cleanPromo {
+			case "PASURUANHEMAT", "JOGOPAWON5":
+				if req.Subtotal >= 35000 {
+					validatedDiscount = 5000
+				}
+			case "SUBUHSEGAR", "HEMAT25":
+				if req.Subtotal >= 25000 {
+					validatedDiscount = 2500
+				}
+			case "GRATISONGKIR", "ONGKIR0":
+				req.DeliveryFee = 0
+				validatedDiscount = 0
+			default:
+				// Cek apakah berupa voucher penukaran koin reward
+				isVoucherReward := false
+				for _, rew := range a.store.rewards {
+					if rew.Category == "Voucher" && (strings.EqualFold(rew.ID, cleanPromo) || strings.EqualFold(rew.Name, cleanPromo)) {
+						isVoucherReward = true
+						validatedDiscount = 5000
+						break
+					}
+				}
+				if !isVoucherReward {
+					validatedDiscount = 0
+				}
+			}
+		}
+
+		if validatedDiscount > req.Subtotal {
+			validatedDiscount = req.Subtotal
+		}
+
+		// Abaikan nilai discount kiriman klien, wajibkan hasil validasi server
+		req.Discount = validatedDiscount
 		req.TotalAmount = req.Subtotal + req.DeliveryFee - req.Discount
 		if req.TotalAmount < 0 {
 			req.TotalAmount = 0
@@ -1972,7 +2487,6 @@ func (a *App) handleOrders(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		a.store.mutex.Lock()
 		a.store.orders = append([]Order{req}, a.store.orders...)
 
 		// Pastikan akun pelanggan tercatat (Koin pesanan baru diberikan ketika pembayaran LUNAS diverifikasi admin)
@@ -2135,6 +2649,10 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		tok := extractAuthToken(r)
+		isAdmin := a.validateAdminToken(tok) || a.validateAdminRequest(r)
+		_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+
 		var body struct {
 			PaymentProofURL string `json:"payment_proof_url"`
 		}
@@ -2147,6 +2665,16 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 		var updatedOrder *Order
 		for i, o := range a.store.orders {
 			if o.ID == orderID || o.OrderNumber == orderID {
+				if !isAdmin && (!isCustomer || normalizePhone(tokenPhone) != normalizePhone(o.CustomerPhone)) {
+					a.store.mutex.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "Akses ditolak: Anda hanya dapat mengunggah bukti transfer untuk pesanan milik Anda sendiri",
+					})
+					return
+				}
 				a.store.orders[i].PaymentProofURL = body.PaymentProofURL
 				a.store.orders[i].UpdatedAt = time.Now()
 				updatedOrder = &a.store.orders[i]
@@ -2191,11 +2719,25 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		tok := extractAuthToken(r)
+		isAdmin := a.validateAdminToken(tok) || a.validateAdminRequest(r)
+		_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+
 		a.store.mutex.Lock()
 		var updatedOrder *Order
 		var errorMsg string
 		for i, o := range a.store.orders {
 			if strings.EqualFold(o.ID, orderID) || strings.EqualFold(o.OrderNumber, orderID) {
+				if !isAdmin && (!isCustomer || normalizePhone(tokenPhone) != normalizePhone(o.CustomerPhone)) {
+					a.store.mutex.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "Akses ditolak: Anda hanya dapat membatalkan pesanan milik Anda sendiri",
+					})
+					return
+				}
 				// Cek apakah sudah lunas
 				if strings.EqualFold(o.PaymentStatus, "paid") {
 					errorMsg = "Pesanan yang sudah dibayar (Lunas) tidak dapat dibatalkan otomatis. Silakan hubungi admin WhatsApp."
@@ -2253,6 +2795,15 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodDelete {
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menghapus pesanan",
+			})
+			return
+		}
 		a.store.mutex.Lock()
 		defer a.store.mutex.Unlock()
 
@@ -2298,10 +2849,27 @@ func (a *App) handleOrderDetail(w http.ResponseWriter, r *http.Request) {
 	defer a.store.mutex.RUnlock()
 
 	trimmedID := strings.TrimSpace(id)
+	tok := extractAuthToken(r)
+	isAdmin := a.validateAdminToken(tok) || a.validateAdminRequest(r)
+	_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+
 	for _, o := range a.store.orders {
 		if strings.EqualFold(o.ID, trimmedID) || strings.EqualFold(o.OrderNumber, trimmedID) {
+			if isAdmin || (isCustomer && normalizePhone(tokenPhone) == normalizePhone(o.CustomerPhone)) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(o)
+				return
+			}
+			// Masking PII data untuk pelacakan pihak ketiga / tanpa login pemilik
+			sanitized := o
+			sanitized.CustomerPhone = maskPhoneNumber(o.CustomerPhone)
+			sanitized.CustomerName = maskCustomerName(o.CustomerName)
+			sanitized.DeliveryAddress = "Pasuruan (Area Desa/Kluster Terproteksi)"
+			sanitized.DeliveryNote = ""
+			sanitized.PaymentProofURL = ""
+			sanitized.HousePhotoURL = ""
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(o)
+			json.NewEncoder(w).Encode(sanitized)
 			return
 		}
 	}
@@ -2650,6 +3218,15 @@ func (a *App) handleRewards(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(list)
 
 	case http.MethodPost:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menambah hadiah sembako",
+			})
+			return
+		}
 		var item RewardItem
 		if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2753,6 +3330,15 @@ func (a *App) handleRewardDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Reward not found", http.StatusNotFound)
 
 	case http.MethodPut:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat mengubah hadiah",
+			})
+			return
+		}
 		var updated RewardItem
 		if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2800,6 +3386,15 @@ func (a *App) handleRewardDetail(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(updated)
 
 	case http.MethodDelete:
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Hanya pengelola/admin yang dapat menghapus hadiah",
+			})
+			return
+		}
 		// Hapus dari PostgreSQL jika terhubung
 		if a.store.db != nil {
 			_, err := a.store.db.Exec(`DELETE FROM rewards WHERE id = $1`, id)
@@ -2853,6 +3448,49 @@ func (a *App) handleRedeemReward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.CustomerPhone = normalizePhone(strings.TrimSpace(req.CustomerPhone))
+
+	// Ekstrak Bearer token atau token kustom untuk validasi sesi
+	var authBearer string
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			authBearer = strings.TrimSpace(parts[1])
+		} else if len(parts) == 1 {
+			authBearer = strings.TrimSpace(parts[0])
+		}
+	}
+	if authBearer == "" {
+		authBearer = strings.TrimSpace(r.Header.Get("X-Customer-Token"))
+	}
+	if authBearer == "" {
+		authBearer = strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	}
+
+	isAdmin := a.validateAdminToken(authBearer)
+	_, tokenPhone, isCustomer := a.validateCustomerToken(authBearer)
+
+	// Keamanan Poin: Wajibkan autentikasi sesi pelanggan / admin
+	if !isAdmin && !isCustomer {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Akses ditolak: Autentikasi sesi pelanggan diperlukan untuk menukarkan poin hadiah. Silakan masuk ke akun Anda.",
+		})
+		return
+	}
+
+	// Jika pemanggil adalah pelanggan, nomor telepon yang poinnya dipotong HARUS cocok dengan akun login
+	if !isAdmin && isCustomer {
+		if normalizePhone(tokenPhone) != req.CustomerPhone {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Akses ditolak: Anda hanya dapat menukarkan poin dari akun Anda sendiri.",
+			})
+			return
+		}
+	}
 
 	a.store.mutex.Lock()
 	defer a.store.mutex.Unlock()
@@ -3000,6 +3638,31 @@ func (a *App) handleRewardRedemptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	phoneQuery := normalizePhone(strings.TrimSpace(r.URL.Query().Get("phone")))
+	isAdmin := a.validateAdminRequest(r)
+
+	if phoneQuery == "" {
+		if !isAdmin {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Parameter 'phone' wajib disertakan atau login sebagai administrator",
+			})
+			return
+		}
+	} else if !isAdmin {
+		tok := extractAuthToken(r)
+		_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+		if !isCustomer || normalizePhone(tokenPhone) != phoneQuery {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Anda hanya dapat melihat riwayat klaim hadiah milik akun Anda sendiri",
+			})
+			return
+		}
+	}
 
 	a.store.mutex.RLock()
 	defer a.store.mutex.RUnlock()
@@ -3298,6 +3961,16 @@ func (a *App) handleSimulateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !a.validateAdminRequest(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Akses ditolak: Fitur simulasi order hanya dapat dijalankan oleh administrator",
+		})
+		return
+	}
+
 	a.store.mutex.RLock()
 	if len(a.store.products) == 0 {
 		a.store.mutex.RUnlock()
@@ -3553,6 +4226,8 @@ func (a *App) handleCustomerRegister(w http.ResponseWriter, r *http.Request) {
 	a.store.saveUsersToDisk()
 	go a.store.syncUserToSupabaseREST(newUser)
 
+	newUser.Token = a.generateCustomerToken(newUser.ID, newUser.Phone)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newUser)
@@ -3579,6 +4254,13 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp wajib diisi"})
+		return
+	}
+
+	if req.Password == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Kata sandi wajib diisi"})
 		return
 	}
 
@@ -3632,15 +4314,21 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 			if refCount.Valid {
 				u.ReferralCount = int(refCount.Int64)
 			}
-			// Cek password hash
-			if dbHash != "" && dbSalt != "" && req.Password != "" {
-				computed := hashPasswordWithSalt(req.Password, dbSalt)
-				if subtle.ConstantTimeCompare([]byte(computed), []byte(dbHash)) != 1 {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp atau kata sandi salah. Silakan periksa kembali."})
-					return
-				}
+			// Cek password hash wajib terverifikasi
+			if dbHash == "" || dbSalt == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Akun ini belum memiliki kata sandi atau data tidak valid. Silakan hubungi admin."})
+				return
+			}
+			computed := hashPasswordWithSalt(req.Password, dbSalt)
+			if subtle.ConstantTimeCompare([]byte(computed), []byte(dbHash)) != 1 {
+				// Mitigasi Credential Stuffing & Brute-Force pada akun pelanggan
+				time.Sleep(400 * time.Millisecond)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp atau kata sandi salah. Silakan periksa kembali."})
+				return
 			}
 
 			// Simpan ke memory jika belum ada
@@ -3658,6 +4346,7 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			a.store.mutex.Unlock()
 
+			u.Token = a.generateCustomerToken(u.ID, u.Phone)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(u)
 			return
@@ -3674,15 +4363,20 @@ func (a *App) handleCustomerLogin(w http.ResponseWriter, r *http.Request) {
 				a.store.users[i].ReferralCode = generateReferralCode(u.Name, u.Phone)
 				u = a.store.users[i]
 			}
-			if u.PasswordHash != "" && u.Salt != "" && req.Password != "" {
-				computed := hashPasswordWithSalt(req.Password, u.Salt)
-				if subtle.ConstantTimeCompare([]byte(computed), []byte(u.PasswordHash)) != 1 {
-					w.Header().Set("Content-Type", "application/json")
-					w.WriteHeader(http.StatusUnauthorized)
-					json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp atau kata sandi salah. Silakan periksa kembali."})
-					return
-				}
+			if u.PasswordHash == "" || u.Salt == "" {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Akun ini belum memiliki kata sandi atau data keamanan tidak lengkap. Silakan hubungi admin."})
+				return
 			}
+			computed := hashPasswordWithSalt(req.Password, u.Salt)
+			if subtle.ConstantTimeCompare([]byte(computed), []byte(u.PasswordHash)) != 1 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp atau kata sandi salah. Silakan periksa kembali."})
+				return
+			}
+			u.Token = a.generateCustomerToken(u.ID, u.Phone)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(u)
 			return
@@ -3720,6 +4414,27 @@ func (a *App) handleCustomerProfile(w http.ResponseWriter, r *http.Request) {
 
 		a.store.mutex.Lock()
 		defer a.store.mutex.Unlock()
+
+		// Ekstrak Bearer token atau token kustom untuk validasi sesi
+		var authBearer string
+		authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				authBearer = strings.TrimSpace(parts[1])
+			} else if len(parts) == 1 {
+				authBearer = strings.TrimSpace(parts[0])
+			}
+		}
+		if authBearer == "" {
+			authBearer = strings.TrimSpace(r.Header.Get("X-Customer-Token"))
+		}
+		if authBearer == "" {
+			authBearer = strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+		}
+
+		isAdmin := a.validateAdminToken(authBearer)
+		tokenUserID, tokenPhone, isCustomer := a.validateCustomerToken(authBearer)
 
 		var updatedUser *CustomerUser
 		var targetIndex = -1
@@ -3775,104 +4490,165 @@ func (a *App) handleCustomerProfile(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		if targetIndex != -1 {
-			u := &a.store.users[targetIndex]
-
-			// Cek jika ada permintaan ganti kata sandi
-			if req.NewPassword != "" {
-				if req.OldPassword != "" && u.PasswordHash != "" && u.Salt != "" {
-					comp := hashPasswordWithSalt(req.OldPassword, u.Salt)
-					if subtle.ConstantTimeCompare([]byte(comp), []byte(u.PasswordHash)) != 1 {
-						w.Header().Set("Content-Type", "application/json")
-						w.WriteHeader(http.StatusUnauthorized)
-						json.NewEncoder(w).Encode(map[string]string{"error": "Kata sandi lama tidak sesuai"})
-						return
-					}
-				}
-				newSalt := fmt.Sprintf("jpw_cust_%d", time.Now().UnixNano())
-				newHash := hashPasswordWithSalt(req.NewPassword, newSalt)
-				u.Salt = newSalt
-				u.PasswordHash = newHash
-			}
-
-			if req.Name != "" {
-				u.Name = req.Name
-			}
-			if req.Phone != "" {
-				cleanPhone := normalizePhone(strings.TrimSpace(req.Phone))
-				if cleanPhone != "" {
-					u.Phone = cleanPhone
-				}
-			}
-			if req.Email != "" {
-				u.Email = strings.TrimSpace(req.Email)
-			}
-			if req.AvatarURL != "" {
-				u.AvatarURL = req.AvatarURL
-			}
-			u.Note = req.Note
-
-			if req.SavedAddresses != nil {
-				u.SavedAddresses = req.SavedAddresses
-				if len(u.SavedAddresses) == 0 {
-					// Semua alamat dihapus
-					u.Address = ""
-					u.Landmark = ""
-					u.HousePhotoURL = ""
-					u.Note = ""
-				} else {
-					var foundPrimary bool
-					for _, addr := range u.SavedAddresses {
-						if addr.IsPrimary {
-							u.Address = addr.Address
-							u.Landmark = addr.Landmark
-							u.Note = addr.Landmark
-							u.HousePhotoURL = addr.HousePhotoURL
-							foundPrimary = true
-							break
-						}
-					}
-					if !foundPrimary && len(u.SavedAddresses) > 0 {
-						u.Address = u.SavedAddresses[0].Address
-						u.Landmark = u.SavedAddresses[0].Landmark
-						u.Note = u.SavedAddresses[0].Landmark
-						u.HousePhotoURL = u.SavedAddresses[0].HousePhotoURL
-					}
-				}
-			} else {
-				u.Address = req.Address
-				u.Landmark = req.Landmark
-				if req.HousePhotoURL != "" {
-					u.HousePhotoURL = req.HousePhotoURL
-				}
-			}
-			updatedUser = u
-
-			if a.store.db != nil {
-				savedAddressesJSON, _ := json.Marshal(u.SavedAddresses)
-				_, err := a.store.db.Exec(`
-					UPDATE users
-					SET name = $1, phone = $2, email = $3, address = $4, note = $5, avatar_url = $6, house_photo_url = $7,
-					    password_hash = $8, salt = $9, landmark = $10, saved_addresses = $11, updated_at = NOW()
-					WHERE id = $12
-				`, u.Name, u.Phone, u.Email, u.Address, u.Note, u.AvatarURL, u.HousePhotoURL, u.PasswordHash, u.Salt, u.Landmark, string(savedAddressesJSON), u.ID)
-				if err != nil {
-					log.Printf("[Database Warning] Gagal update customer di DB (tetap simpan di disk & sync REST): %v\n", err)
-				}
-			}
-
-			// Simpan ke disk lokal & sinkronisasi Supabase REST
-			a.store.saveUsersToDisk()
-			go a.store.syncUserToSupabaseREST(*updatedUser)
-
+		if targetIndex == -1 {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(updatedUser)
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Data pelanggan tidak ditemukan"})
 			return
 		}
 
+		u := &a.store.users[targetIndex]
+
+		// Validasi Sesi Pemilik Akun:
+		// 1. Admin memiliki hak akses penuh untuk mengelola data akun
+		// 2. Pelanggan wajib menyertakan token sesi valid yang cocok dengan target akun
+		// 3. Fallback jika token belum tersedia di storage klien: wajib verifikasi kata sandi lama u.PasswordHash
+		if !isAdmin {
+			if isCustomer {
+				userMatches := (tokenUserID != "" && u.ID == tokenUserID) || (tokenPhone != "" && normalizePhone(u.Phone) == tokenPhone)
+				if !userMatches {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusForbidden)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Akses ditolak: Anda tidak memiliki izin untuk mengubah profil akun lain"})
+					return
+				}
+			} else {
+				hasValidPassword := false
+				if u.PasswordHash != "" && u.Salt != "" && strings.TrimSpace(req.OldPassword) != "" {
+					comp := hashPasswordWithSalt(req.OldPassword, u.Salt)
+					if subtle.ConstantTimeCompare([]byte(comp), []byte(u.PasswordHash)) == 1 {
+						hasValidPassword = true
+					}
+				}
+				if !hasValidPassword {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Sesi tidak valid atau telah kedaluwarsa. Silakan masuk kembali ke akun Anda."})
+					return
+				}
+			}
+		}
+
+		// Cek jika ada permintaan ganti kata sandi
+		if req.NewPassword != "" {
+			if len(strings.TrimSpace(req.NewPassword)) < 4 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Kata sandi baru minimal 4 karakter"})
+				return
+			}
+
+			// WAJIBKAN req.OldPassword != "" saat akun sudah memiliki password
+			if u.PasswordHash != "" {
+				if strings.TrimSpace(req.OldPassword) == "" {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Kata sandi lama wajib diisi untuk mengubah kata sandi baru"})
+					return
+				}
+				comp := hashPasswordWithSalt(req.OldPassword, u.Salt)
+				if subtle.ConstantTimeCompare([]byte(comp), []byte(u.PasswordHash)) != 1 {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusUnauthorized)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Kata sandi lama tidak sesuai"})
+					return
+				}
+			}
+
+			newSalt := fmt.Sprintf("jpw_cust_%d", time.Now().UnixNano())
+			newHash := hashPasswordWithSalt(req.NewPassword, newSalt)
+			u.Salt = newSalt
+			u.PasswordHash = newHash
+		}
+
+		if req.Name != "" {
+			u.Name = req.Name
+		}
+		if req.Phone != "" {
+			cleanPhone := normalizePhone(strings.TrimSpace(req.Phone))
+			if cleanPhone != "" && cleanPhone != u.Phone {
+				phoneTaken := false
+				for _, existing := range a.store.users {
+					if existing.ID != u.ID && normalizePhone(existing.Phone) == cleanPhone {
+						phoneTaken = true
+						break
+					}
+				}
+				if phoneTaken {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(map[string]string{"error": "Nomor WhatsApp baru sudah digunakan oleh akun lain"})
+					return
+				}
+				u.Phone = cleanPhone
+			}
+		}
+		if req.Email != "" {
+			u.Email = strings.TrimSpace(req.Email)
+		}
+		if req.AvatarURL != "" {
+			u.AvatarURL = req.AvatarURL
+		}
+		u.Note = req.Note
+
+		if req.SavedAddresses != nil {
+			u.SavedAddresses = req.SavedAddresses
+			if len(u.SavedAddresses) == 0 {
+				// Semua alamat dihapus
+				u.Address = ""
+				u.Landmark = ""
+				u.HousePhotoURL = ""
+				u.Note = ""
+			} else {
+				var foundPrimary bool
+				for _, addr := range u.SavedAddresses {
+					if addr.IsPrimary {
+						u.Address = addr.Address
+						u.Landmark = addr.Landmark
+						u.Note = addr.Landmark
+						u.HousePhotoURL = addr.HousePhotoURL
+						foundPrimary = true
+						break
+					}
+				}
+				if !foundPrimary && len(u.SavedAddresses) > 0 {
+					u.Address = u.SavedAddresses[0].Address
+					u.Landmark = u.SavedAddresses[0].Landmark
+					u.Note = u.SavedAddresses[0].Landmark
+					u.HousePhotoURL = u.SavedAddresses[0].HousePhotoURL
+				}
+			}
+		} else {
+			u.Address = req.Address
+			u.Landmark = req.Landmark
+			if req.HousePhotoURL != "" {
+				u.HousePhotoURL = req.HousePhotoURL
+			}
+		}
+
+		// Terbitkan token sesi terbaru untuk dikembalikan ke klien
+		u.Token = a.generateCustomerToken(u.ID, u.Phone)
+		updatedUser = u
+
+		if a.store.db != nil {
+			savedAddressesJSON, _ := json.Marshal(u.SavedAddresses)
+			_, err := a.store.db.Exec(`
+				UPDATE users
+				SET name = $1, phone = $2, email = $3, address = $4, note = $5, avatar_url = $6, house_photo_url = $7,
+				    password_hash = $8, salt = $9, landmark = $10, saved_addresses = $11, updated_at = NOW()
+				WHERE id = $12
+			`, u.Name, u.Phone, u.Email, u.Address, u.Note, u.AvatarURL, u.HousePhotoURL, u.PasswordHash, u.Salt, u.Landmark, string(savedAddressesJSON), u.ID)
+			if err != nil {
+				log.Printf("[Database Warning] Gagal update customer di DB (tetap simpan di disk & sync REST): %v\n", err)
+			}
+		}
+
+		// Simpan ke disk lokal & sinkronisasi Supabase REST
+		a.store.saveUsersToDisk()
+		go a.store.syncUserToSupabaseREST(*updatedUser)
+
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Data pelanggan tidak ditemukan"})
+		json.NewEncoder(w).Encode(updatedUser)
 		return
 	}
 
@@ -3886,6 +4662,22 @@ func (a *App) handleUserReferral(w http.ResponseWriter, r *http.Request) {
 	}
 
 	phone := normalizePhone(strings.TrimSpace(r.URL.Query().Get("phone")))
+	if phone == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Parameter phone wajib diisi"})
+		return
+	}
+
+	tok := extractAuthToken(r)
+	isAdmin := a.validateAdminToken(tok) || a.validateAdminRequest(r)
+	_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+	if !isAdmin && (!isCustomer || normalizePhone(tokenPhone) != phone) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Akses ditolak: Anda hanya dapat melihat data referral akun Anda sendiri"})
+		return
+	}
 	if phone == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -4017,6 +4809,16 @@ func (a *App) handleApplyReferral(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tok := extractAuthToken(r)
+	isAdmin := a.validateAdminToken(tok) || a.validateAdminRequest(r)
+	_, tokenPhone, isCustomer := a.validateCustomerToken(tok)
+	if !isAdmin && (!isCustomer || normalizePhone(tokenPhone) != reqPhone) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Akses ditolak: Autentikasi sesi pemilik akun diperlukan untuk memasukkan referral"})
+		return
+	}
+
 	a.store.mutex.Lock()
 	defer a.store.mutex.Unlock()
 
@@ -4085,6 +4887,16 @@ func (a *App) handleApplyReferral(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if !a.validateAdminRequest(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "Akses ditolak: Data pengguna hanya dapat diakses oleh administrator terautentikasi",
+		})
 		return
 	}
 
@@ -4263,18 +5075,13 @@ func hashPasswordWithSalt(password, salt string) string {
 }
 
 func (a *App) verifyAdminPassword(password string) bool {
-	// 0. Cek custom admin password dari environment variable jika disetel
+	// 1. Wajibkan pengecekan dari environment variable ADMIN_PASSWORD jika disetel
 	envAdminPass := strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
-	if envAdminPass != "" && subtle.ConstantTimeCompare([]byte(password), []byte(envAdminPass)) == 1 {
-		return true
+	if envAdminPass != "" {
+		return subtle.ConstantTimeCompare([]byte(password), []byte(envAdminPass)) == 1
 	}
 
-	// Master password kemudahan akses admin
-	if password == "pasuruan*2219" || password == "admin" || password == "jogopawon" || password == "admin123" || password == "8888" {
-		return true
-	}
-
-	// 1. Cek dari database PostgreSQL / Supabase jika koneksi aktif
+	// 2. Wajibkan pengecekan hash & salt dari database PostgreSQL / Supabase jika koneksi aktif
 	if a.store.db != nil {
 		var dbHash, dbSalt string
 		err := a.store.db.QueryRow("SELECT password_hash, salt FROM admin_users WHERE username = 'admin' LIMIT 1").Scan(&dbHash, &dbSalt)
@@ -4284,9 +5091,227 @@ func (a *App) verifyAdminPassword(password string) bool {
 		}
 	}
 
-	// 2. Fallback aman menggunakan salt + hash (tanpa plaintext)
+	// 3. Fallback aman menggunakan salt + hash database default (tanpa plaintext / backdoor)
 	computed := hashPasswordWithSalt(password, defaultAdminSalt)
 	return subtle.ConstantTimeCompare([]byte(computed), []byte(defaultAdminHash)) == 1
+}
+
+func (a *App) getAdminJWTSecret() []byte {
+	secret := os.Getenv("SUPABASE_JWT_SECRET")
+	if secret == "" {
+		secret = os.Getenv("ADMIN_PASSWORD")
+	}
+	if secret == "" {
+		secret = defaultAdminSalt
+	}
+	return []byte(secret)
+}
+
+func (a *App) generateAdminToken() string {
+	exp := time.Now().Add(30 * 24 * time.Hour).Unix()
+	nonceBytes := make([]byte, 8)
+	rand.Read(nonceBytes)
+	nonce := hex.EncodeToString(nonceBytes)
+
+	payload := fmt.Sprintf("admin:%d:%s", exp, nonce)
+	h := hmac.New(sha256.New, a.getAdminJWTSecret())
+	h.Write([]byte(payload))
+	sig := hex.EncodeToString(h.Sum(nil))
+
+	encodedPayload := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	token := fmt.Sprintf("jpw_adm.%s.%s", encodedPayload, sig)
+
+	a.adminTokens.Store(token, time.Unix(exp, 0))
+	return token
+}
+
+func (a *App) validateAdminToken(token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+
+	// 1. Cek dari memory cache aktif
+	if expVal, ok := a.adminTokens.Load(token); ok {
+		if expTime, ok := expVal.(time.Time); ok {
+			if time.Now().Before(expTime) {
+				return true
+			}
+			a.adminTokens.Delete(token)
+		}
+	}
+
+	// 2. Cek apakah token cocok dengan ADMIN_PASSWORD langsung (untuk API script / dev)
+	envAdminPass := strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
+	if envAdminPass != "" && subtle.ConstantTimeCompare([]byte(token), []byte(envAdminPass)) == 1 {
+		return true
+	}
+
+	// 3. Validasi HMAC signature dari token format jpw_adm.<payload>.<sig>
+	if strings.HasPrefix(token, "jpw_adm.") {
+		parts := strings.Split(token, ".")
+		if len(parts) == 3 {
+			encodedPayload := parts[1]
+			sig := parts[2]
+
+			payloadBytes, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+			if err == nil {
+				h := hmac.New(sha256.New, a.getAdminJWTSecret())
+				h.Write(payloadBytes)
+				expectedSig := hex.EncodeToString(h.Sum(nil))
+
+				if subtle.ConstantTimeCompare([]byte(sig), []byte(expectedSig)) == 1 {
+					payload := string(payloadBytes)
+					payloadParts := strings.Split(payload, ":")
+					if len(payloadParts) >= 2 && payloadParts[0] == "admin" {
+						exp, err := strconv.ParseInt(payloadParts[1], 10, 64)
+						if err == nil && time.Now().Unix() < exp {
+							a.adminTokens.Store(token, time.Unix(exp, 0))
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+type CustomerSessionInfo struct {
+	UserID string
+	Phone  string
+	Exp    time.Time
+}
+
+func (a *App) generateCustomerToken(userID, phone string) string {
+	exp := time.Now().Add(90 * 24 * time.Hour).Unix()
+	nonceBytes := make([]byte, 8)
+	rand.Read(nonceBytes)
+	nonce := hex.EncodeToString(nonceBytes)
+
+	cleanPhone := normalizePhone(phone)
+	payload := fmt.Sprintf("cust:%s:%s:%d:%s", userID, cleanPhone, exp, nonce)
+	h := hmac.New(sha256.New, a.getAdminJWTSecret())
+	h.Write([]byte(payload))
+	sig := hex.EncodeToString(h.Sum(nil))
+
+	encodedPayload := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	token := fmt.Sprintf("jpw_cust.%s.%s", encodedPayload, sig)
+
+	a.customerTokens.Store(token, CustomerSessionInfo{
+		UserID: userID,
+		Phone:  cleanPhone,
+		Exp:    time.Unix(exp, 0),
+	})
+	return token
+}
+
+func (a *App) validateCustomerToken(token string) (userID, phone string, valid bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return "", "", false
+	}
+
+	// 1. Cek dari memory cache aktif
+	if infoVal, ok := a.customerTokens.Load(token); ok {
+		if info, ok := infoVal.(CustomerSessionInfo); ok {
+			if time.Now().Before(info.Exp) {
+				return info.UserID, info.Phone, true
+			}
+			a.customerTokens.Delete(token)
+		}
+	}
+
+	// 2. Fallback verifikasi HMAC signature
+	if strings.HasPrefix(token, "jpw_cust.") {
+		parts := strings.Split(token, ".")
+		if len(parts) == 3 {
+			encodedPayload := parts[1]
+			sigHex := parts[2]
+
+			rawPayload, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+			if err == nil {
+				h := hmac.New(sha256.New, a.getAdminJWTSecret())
+				h.Write(rawPayload)
+				expectedSig := hex.EncodeToString(h.Sum(nil))
+
+				if subtle.ConstantTimeCompare([]byte(sigHex), []byte(expectedSig)) == 1 {
+					payloadParts := strings.Split(string(rawPayload), ":")
+					// payload: cust:<userID>:<phone>:<exp>:<nonce>
+					if len(payloadParts) >= 4 && payloadParts[0] == "cust" {
+						uID := payloadParts[1]
+						uPhone := payloadParts[2]
+						exp, err := strconv.ParseInt(payloadParts[3], 10, 64)
+						if err == nil && time.Now().Unix() < exp {
+							info := CustomerSessionInfo{
+								UserID: uID,
+								Phone:  uPhone,
+								Exp:    time.Unix(exp, 0),
+							}
+							a.customerTokens.Store(token, info)
+							return uID, uPhone, true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return "", "", false
+}
+
+func (a *App) validateAdminRequest(r *http.Request) bool {
+	// Ekstrak dari Authorization header: "Bearer <token>"
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			if a.validateAdminToken(parts[1]) {
+				return true
+			}
+		} else if len(parts) == 1 && a.validateAdminToken(parts[0]) {
+			return true
+		}
+	}
+
+	// Ekstrak dari header kustom "X-Admin-Token"
+	if customHeader := r.Header.Get("X-Admin-Token"); customHeader != "" {
+		if a.validateAdminToken(customHeader) {
+			return true
+		}
+	}
+
+	// Ekstrak dari query parameter ?admin_token=<token>
+	if queryToken := r.URL.Query().Get("admin_token"); queryToken != "" {
+		if a.validateAdminToken(queryToken) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// requireAdminAuth adalah Middleware Autentikasi Admin untuk melindungi rute sensitif
+func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next(w, r)
+			return
+		}
+
+		if !a.validateAdminRequest(r) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "Akses ditolak: Autentikasi admin (Bearer Token) diperlukan",
+			})
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
@@ -4308,12 +5333,14 @@ func (a *App) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if a.verifyAdminPassword(req.Password) {
-		token := fmt.Sprintf("jpw_adm_%d", time.Now().UnixNano())
+		token := a.generateAdminToken()
 		json.NewEncoder(w).Encode(AdminLoginResponse{
 			Success: true,
 			Token:   token,
 		})
 	} else {
+		// Mitigasi Brute-Force & Timing Attacks pada login admin
+		time.Sleep(500 * time.Millisecond)
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(AdminLoginResponse{
 			Success: false,
@@ -4359,31 +5386,159 @@ func (a *App) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Batasi ukuran file maksimal 100MB (mendukung foto & video resolusi tinggi)
-	r.Body = http.MaxBytesReader(w, r.Body, 100<<20)
-	if err := r.ParseMultipartForm(100 << 20); err != nil {
-		http.Error(w, "Ukuran file terlalu besar (maksimal 100MB)", http.StatusBadRequest)
+	// 1. Autentikasi Pemanggil (Wajib Admin atau Pelanggan terautentikasi)
+	var authBearer string
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			authBearer = strings.TrimSpace(parts[1])
+		} else if len(parts) == 1 {
+			authBearer = strings.TrimSpace(parts[0])
+		}
+	}
+	if authBearer == "" {
+		authBearer = strings.TrimSpace(r.Header.Get("X-Customer-Token"))
+	}
+	if authBearer == "" {
+		authBearer = strings.TrimSpace(r.Header.Get("X-Admin-Token"))
+	}
+
+	isAdmin := a.validateAdminToken(authBearer)
+	_, _, isCustomer := a.validateCustomerToken(authBearer)
+
+	if !isAdmin && !isCustomer {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Akses ditolak: Autentikasi akun (Admin atau Pelanggan) diperlukan untuk mengunggah berkas",
+		})
+		return
+	}
+
+	// 2. Batasi ukuran file (15MB untuk pelanggan, 100MB untuk admin)
+	maxUploadSize := int64(15 << 20)
+	if isAdmin {
+		maxUploadSize = int64(100 << 20)
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Ukuran berkas melebihi batas (maksimal 15MB untuk pelanggan, 100MB untuk admin)",
+		})
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, "File tidak ditemukan dalam request (gunakan key 'file')", http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Berkas tidak ditemukan dalam request (gunakan key 'file')",
+		})
 		return
 	}
 	defer file.Close()
 
+	// 3. Whitelist Ekstensi File & Larang Keras SVG (Cegah Stored XSS)
 	ext := strings.ToLower(filepath.Ext(header.Filename))
-	if ext == "" {
-		ext = ".jpg"
+	if ext == ".svg" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Format SVG dilarang demi keamanan sistem (risiko Stored XSS). Gunakan format PNG, JPG, atau WEBP.",
+		})
+		return
 	}
 
-	isVideo := false
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".webp": true,
+	}
+	if isAdmin {
+		allowedExtensions[".mp4"] = true
+		allowedExtensions[".webm"] = true
+	}
+
+	if !allowedExtensions[ext] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Format berkas tidak diizinkan. Hanya mendukung file foto (JPG, JPEG, PNG, WEBP) atau video (MP4, WEBM)",
+		})
+		return
+	}
+
+	// 4. Verifikasi Magic Bytes (MIME Sniffing)
+	buf := make([]byte, 512)
+	n, readErr := file.Read(buf)
+	if readErr != nil && readErr != io.EOF {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Gagal membaca berkas"})
+		return
+	}
+	if seeker, ok := file.(io.Seeker); ok {
+		seeker.Seek(0, io.SeekStart)
+	}
+
+	// Deteksi skrip XML / HTML / SVG berbahaya
+	sniffedLower := strings.ToLower(string(buf[:n]))
+	if strings.Contains(sniffedLower, "<svg") || strings.Contains(sniffedLower, "<script") || strings.Contains(sniffedLower, "<?xml") || strings.Contains(sniffedLower, "<html") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Berkas ditolak: Terdeteksi skrip atau tag XML/HTML berbahaya di dalam file",
+		})
+		return
+	}
+
+	detectedMime := http.DetectContentType(buf[:n])
+	isAllowedMime := false
+	var safeContentType string
+
 	switch ext {
-	case ".mp4", ".webm", ".mov", ".mkv", ".avi", ".3gp":
-		isVideo = true
+	case ".jpg", ".jpeg":
+		if detectedMime == "image/jpeg" {
+			isAllowedMime = true
+			safeContentType = "image/jpeg"
+		}
+	case ".png":
+		if detectedMime == "image/png" {
+			isAllowedMime = true
+			safeContentType = "image/png"
+		}
+	case ".webp":
+		if detectedMime == "image/webp" || (n >= 12 && string(buf[0:4]) == "RIFF" && string(buf[8:12]) == "WEBP") {
+			isAllowedMime = true
+			safeContentType = "image/webp"
+		}
+	case ".mp4":
+		if detectedMime == "video/mp4" || (n >= 8 && string(buf[4:8]) == "ftyp") {
+			isAllowedMime = true
+			safeContentType = "video/mp4"
+		}
+	case ".webm":
+		if detectedMime == "video/webm" || (n >= 4 && buf[0] == 0x1A && buf[1] == 0x45 && buf[2] == 0xDF && buf[3] == 0xA3) {
+			isAllowedMime = true
+			safeContentType = "video/webm"
+		}
 	}
 
+	if !isAllowedMime {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Integritas berkas tidak valid: Magic bytes konten tidak sesuai dengan tipe berkas",
+		})
+		return
+	}
+
+	isVideo := (ext == ".mp4" || ext == ".webm")
 	folder := r.FormValue("folder")
 	if folder == "" {
 		if isVideo {
@@ -4411,41 +5566,11 @@ func (a *App) handleUpload(w http.ResponseWriter, r *http.Request) {
 		bucketName = "bdnstorage"
 	}
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" || contentType == "application/octet-stream" {
-		switch ext {
-		case ".mp4":
-			contentType = "video/mp4"
-		case ".webm":
-			contentType = "video/webm"
-		case ".mov":
-			contentType = "video/quicktime"
-		case ".mkv":
-			contentType = "video/x-matroska"
-		case ".avi":
-			contentType = "video/x-msvideo"
-		case ".webp":
-			contentType = "image/webp"
-		case ".svg":
-			contentType = "image/svg+xml"
-		case ".png":
-			contentType = "image/png"
-		case ".gif":
-			contentType = "image/gif"
-		default:
-			if isVideo {
-				contentType = "video/mp4"
-			} else {
-				contentType = "image/jpeg"
-			}
-		}
-	}
-
 	_, err = client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      aws.String(bucketName),
 		Key:         aws.String(objectKey),
 		Body:        file,
-		ContentType: aws.String(contentType),
+		ContentType: aws.String(safeContentType),
 	})
 	if err != nil {
 		log.Printf("[Cloudflare R2 Upload Error]: %v\n", err)
@@ -4520,10 +5645,18 @@ func (a *App) handleServeImage(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	w.Header().Set("Accept-Ranges", "bytes")
-	if resp.ContentType != nil && *resp.ContentType != "" {
+	// Keamanan: Security Headers Anti-XSS & Anti-MIME-Sniffing
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	w.Header().Set("X-Frame-Options", "DENY")
+
+	ext := strings.ToLower(filepath.Ext(key))
+	if ext == ".svg" || (resp.ContentType != nil && strings.Contains(*resp.ContentType, "svg")) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"file.svg\"")
+	} else if resp.ContentType != nil && *resp.ContentType != "" {
 		w.Header().Set("Content-Type", *resp.ContentType)
 	} else {
-		ext := strings.ToLower(filepath.Ext(key))
 		switch ext {
 		case ".mp4":
 			w.Header().Set("Content-Type", "video/mp4")
@@ -4539,8 +5672,6 @@ func (a *App) handleServeImage(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "image/webp")
 		case ".png":
 			w.Header().Set("Content-Type", "image/png")
-		case ".svg":
-			w.Header().Set("Content-Type", "image/svg+xml")
 		case ".gif":
 			w.Header().Set("Content-Type", "image/gif")
 		default:
@@ -4574,7 +5705,25 @@ func (a *App) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println("[WebSocket Upgrade Error]:", err)
 		return
 	}
-	a.hub.register(conn)
+
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		token = r.URL.Query().Get("admin_token")
+	}
+	if token == "" {
+		token = extractAuthToken(r)
+	}
+
+	isAdmin := a.validateAdminToken(token) || a.validateAdminRequest(r)
+	var clientPhone string
+	if !isAdmin && token != "" {
+		_, p, valid := a.validateCustomerToken(token)
+		if valid {
+			clientPhone = p
+		}
+	}
+
+	a.hub.register(conn, isAdmin, clientPhone)
 
 	// Heartbeat Ping rutin setiap 20 detik agar Nginx / NAT HP tidak memutus koneksi
 	done := make(chan struct{})
@@ -4907,6 +6056,12 @@ func (s *Store) getScraperSummary() ScraperSummary {
 }
 
 func fetchRealSiskaperbapoPasuruanPrices(kabkota string) ([]ScrapedPriceItem, string, error) {
+	// CATATAN KEAMANAN & ISOLASI (Security Audit P4):
+	// InsecureSkipVerify: true ini DIISOLASI KHUSUS hanya untuk crawling data portal publik
+	// Disperindag Pemprov Jatim (siskaperbapo.jatimprov.go.id). Portal pemerintah daerah ini
+	// kerap menggunakan sertifikat intermediate chain internal yang tidak terdapat di root CA Go bundle.
+	// Klien ini strictly READ-ONLY untuk memantau harga komoditas pasar terbuka dan TIDAK DIGUNAKAN
+	// untuk transaksi internal, API pelanggan, maupun pembayaran perbankan/QRIS.
 	client := &http.Client{
 		Timeout: 12 * time.Second,
 		Transport: &http.Transport{
@@ -5491,10 +6646,7 @@ func main() {
 				);
 				INSERT INTO admin_users (username, password_hash, salt, updated_at)
 				VALUES ('admin', '1cd9ae869cc9f77a2f3ce0d8c330ead0d65b0337e395f2e8009ac865f37504bb', 'jogopawon_salt_9988_subuh', NOW())
-				ON CONFLICT (username) DO UPDATE
-				SET password_hash = EXCLUDED.password_hash,
-				    salt = EXCLUDED.salt,
-				    updated_at = NOW();`
+				ON CONFLICT (username) DO NOTHING;`
 				if _, execErr := db.Exec(initAdminSQL); execErr != nil {
 					log.Printf("[Warning] Gagal inisialisasi tabel admin_users: %v\n", execErr)
 				} else {
@@ -5587,7 +6739,10 @@ func main() {
 					subtotal NUMERIC(12, 2) NOT NULL DEFAULT 0,
 					variant_name VARCHAR(100)
 				);
-				ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100);`
+				ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_name VARCHAR(100);
+				CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON orders(customer_phone);
+				CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+				CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);`
 				if _, execErr := db.Exec(initOrdersSQL); execErr != nil {
 					log.Printf("[Warning] Gagal inisialisasi tabel orders: %v\n", execErr)
 				} else {
@@ -5745,28 +6900,29 @@ func main() {
 	mux.HandleFunc("/api/delivery-slots", app.handleDeliverySlots)
 	mux.HandleFunc("/api/couriers", app.handleCouriers)
 	mux.HandleFunc("/api/products", app.handleProducts)
-	mux.HandleFunc("/api/products/bulk-prices", app.handleBulkUpdatePrices)
+	mux.HandleFunc("/api/products/bulk-prices", app.requireAdminAuth(app.handleBulkUpdatePrices))
 	mux.HandleFunc("/api/products/", app.handleProductDetail)
 	mux.HandleFunc("/api/orders", app.handleOrders)
 	mux.HandleFunc("/api/orders/", app.handleOrderDetail)
 	mux.HandleFunc("/api/admin/login", app.handleAdminLogin)
-	mux.HandleFunc("/api/admin/orders/status/", app.handleOrderStatus)
-	mux.HandleFunc("/api/admin/stats", app.handleAdminStats)
-	mux.HandleFunc("/api/admin/procurement", app.handleProcurement)
-	mux.HandleFunc("/api/admin/financials", app.handleFinancials)
-	mux.HandleFunc("/api/admin/accounting", app.handleAccounting)
-	mux.HandleFunc("/api/admin/accounting/transactions", app.handleCashTransactions)
-	mux.HandleFunc("/api/admin/accounting/transactions/", app.handleCashTransactionDetail)
-	mux.HandleFunc("/api/admin/waste", app.handleWaste)
-	mux.HandleFunc("/api/admin/users", app.handleAdminUsers)
+	mux.HandleFunc("/api/admin/orders", app.requireAdminAuth(app.handleAdminOrdersList))
+	mux.HandleFunc("/api/admin/orders/status/", app.requireAdminAuth(app.handleOrderStatus))
+	mux.HandleFunc("/api/admin/stats", app.requireAdminAuth(app.handleAdminStats))
+	mux.HandleFunc("/api/admin/procurement", app.requireAdminAuth(app.handleProcurement))
+	mux.HandleFunc("/api/admin/financials", app.requireAdminAuth(app.handleFinancials))
+	mux.HandleFunc("/api/admin/accounting", app.requireAdminAuth(app.handleAccounting))
+	mux.HandleFunc("/api/admin/accounting/transactions", app.requireAdminAuth(app.handleCashTransactions))
+	mux.HandleFunc("/api/admin/accounting/transactions/", app.requireAdminAuth(app.handleCashTransactionDetail))
+	mux.HandleFunc("/api/admin/waste", app.requireAdminAuth(app.handleWaste))
+	mux.HandleFunc("/api/admin/users", app.requireAdminAuth(app.handleAdminUsers))
 	mux.HandleFunc("/api/push/subscribe", app.handlePushSubscribe)
-	mux.HandleFunc("/api/admin/push/broadcast", app.handleSendPushBroadcast)
+	mux.HandleFunc("/api/admin/push/broadcast", app.requireAdminAuth(app.handleSendPushBroadcast))
 	mux.HandleFunc("/api/rewards", app.handleRewards)
 	mux.HandleFunc("/api/rewards/redeem", app.handleRedeemReward)
 	mux.HandleFunc("/api/rewards/redemptions", app.handleRewardRedemptions)
-	mux.HandleFunc("/api/rewards/redemptions/action", app.handleRewardRedemptionAction)
+	mux.HandleFunc("/api/rewards/redemptions/action", app.requireAdminAuth(app.handleRewardRedemptionAction))
 	mux.HandleFunc("/api/rewards/", app.handleRewardDetail)
-	mux.HandleFunc("/api/simulate-order", app.handleSimulateOrder)
+	mux.HandleFunc("/api/simulate-order", app.requireAdminAuth(app.handleSimulateOrder))
 	mux.HandleFunc("/api/auth/login", app.handleCustomerLogin)
 	mux.HandleFunc("/api/auth/register", app.handleCustomerRegister)
 	mux.HandleFunc("/api/auth/profile", app.handleCustomerProfile)
@@ -5778,10 +6934,10 @@ func main() {
 	// Scraper & Price Radar Endpoints
 	mux.HandleFunc("/api/scraper/items", app.handleScraperItems)
 	mux.HandleFunc("/api/scraper/summary", app.handleScraperSummary)
-	mux.HandleFunc("/api/scraper/crawl", app.handleScraperCrawl)
-	mux.HandleFunc("/api/scraper/apply-hpp", app.handleScraperApplyHPP)
-	mux.HandleFunc("/api/scraper/add-item", app.handleScraperAddItem)
-	mux.HandleFunc("/api/scraper/export", app.handleScraperExport)
+	mux.HandleFunc("/api/scraper/crawl", app.requireAdminAuth(app.handleScraperCrawl))
+	mux.HandleFunc("/api/scraper/apply-hpp", app.requireAdminAuth(app.handleScraperApplyHPP))
+	mux.HandleFunc("/api/scraper/add-item", app.requireAdminAuth(app.handleScraperAddItem))
+	mux.HandleFunc("/api/scraper/export", app.requireAdminAuth(app.handleScraperExport))
 
 	// WebSocket
 	mux.HandleFunc("/ws", app.handleWebSocket)

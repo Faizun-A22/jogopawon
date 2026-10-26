@@ -43,7 +43,7 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => { const num = typeof val === 'string' ? parseFloat(val) : val; return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 
   const handleCopy = (text: string, label: string) => {
     navigator.clipboard.writeText(text);

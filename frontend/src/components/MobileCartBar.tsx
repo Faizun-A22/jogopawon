@@ -15,7 +15,7 @@ export const MobileCartBar: React.FC<MobileCartBarProps> = ({
 }) => {
   if (itemCount === 0) return null;
 
-  const formatRupiah = (val: number) => 'Rp' + val.toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => { const num = typeof val === 'string' ? parseFloat(val) : val; return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 
   const triggerHaptic = () => {
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {

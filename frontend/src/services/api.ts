@@ -55,6 +55,29 @@ export const normalizeImageUrl = (url?: string): string => {
 };
 
 
+// Helper to get Bearer Authorization header for admin endpoints
+export const getAdminAuthHeaders = (): Record<string, string> => {
+  const token =
+    (typeof window !== 'undefined' && (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token'))) ||
+    '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+// Helper to get Bearer Authorization header for customer endpoints
+export const getCustomerAuthHeaders = (): Record<string, string> => {
+  let token =
+    (typeof window !== 'undefined' &&
+      (localStorage.getItem('jogopawon_customer_token') || sessionStorage.getItem('jogopawon_customer_token'))) ||
+    '';
+  if (!token && typeof window !== 'undefined') {
+    try {
+      const u = JSON.parse(localStorage.getItem('jogopawon_customer_user') || '{}');
+      if (u && u.token) token = u.token;
+    } catch {}
+  }
+  return token ? { Authorization: 'Bearer ' + token } : {};
+};
+
 export const api = {
   async getCategories(): Promise<Category[]> {
     const res = await fetch(`${API_BASE_URL}/categories`);
@@ -65,7 +88,7 @@ export const api = {
   async addCategory(category: Omit<Category, 'id'>): Promise<Category> {
     const res = await fetch(`${API_BASE_URL}/categories`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(category),
     });
     if (!res.ok) throw new Error('Gagal menambah kategori');
@@ -81,7 +104,7 @@ export const api = {
   async addDeliverySlot(slot: Omit<DeliverySlot, 'id'>): Promise<DeliverySlot> {
     const res = await fetch(`${API_BASE_URL}/delivery-slots`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(slot),
     });
     if (!res.ok) throw new Error('Gagal menambah slot pengiriman');
@@ -97,7 +120,7 @@ export const api = {
   async addCourier(courier: Omit<Courier, 'id' | 'active_orders'>): Promise<Courier> {
     const res = await fetch(`${API_BASE_URL}/couriers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(courier),
     });
     if (!res.ok) throw new Error('Gagal menambah kurir');
@@ -129,7 +152,9 @@ export const api = {
   },
 
   async getOrder(orderId: string): Promise<Order> {
-    const res = await fetch(`${API_BASE_URL}/orders/${orderId}`);
+    const res = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+      headers: { ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
+    });
     if (!res.ok) throw new Error('Pesanan tidak ditemukan');
     return res.json();
   },
@@ -145,6 +170,10 @@ export const api = {
       if (!res.ok) {
         return { success: false, error: data.error || 'Kata sandi admin salah!' };
       }
+      if (data.token && typeof window !== 'undefined') {
+        localStorage.setItem('jogopawon_admin_token', data.token);
+        sessionStorage.setItem('jogopawon_admin_token', data.token);
+      }
       return data;
     } catch {
       return { success: false, error: 'Gagal menghubungi server backend' };
@@ -152,14 +181,16 @@ export const api = {
   },
 
   async getAdminOrders(): Promise<Order[]> {
-    const res = await fetch(`${API_BASE_URL}/orders`);
+    const res = await fetch(`${API_BASE_URL}/admin/orders`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat pesanan admin');
     return res.json();
   },
 
   async getCustomerOrders(phone?: string): Promise<Order[]> {
     const url = phone ? `${API_BASE_URL}/orders?phone=${encodeURIComponent(phone)}` : `${API_BASE_URL}/orders`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
+    });
     if (!res.ok) throw new Error('Gagal memuat riwayat pesanan');
     return res.json();
   },
@@ -167,7 +198,7 @@ export const api = {
   async updateOrderStatus(orderId: string, status: string, courierName?: string, paymentStatus?: string): Promise<Order> {
     const res = await fetch(`${API_BASE_URL}/admin/orders/status/${orderId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify({ status, courier_name: courierName, payment_status: paymentStatus }),
     });
     if (!res.ok) throw new Error('Gagal memperbarui status');
@@ -177,7 +208,7 @@ export const api = {
   async uploadPaymentProof(orderId: string, proofUrl: string): Promise<Order> {
     const res = await fetch(`${API_BASE_URL}/orders/${orderId}/proof`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
       body: JSON.stringify({ payment_proof_url: proofUrl }),
     });
     if (!res.ok) throw new Error('Gagal mengirimkan bukti pembayaran');
@@ -187,7 +218,7 @@ export const api = {
   async cancelOrder(orderId: string): Promise<Order> {
     const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
     });
     const data = await res.json();
     if (!res.ok) {
@@ -197,25 +228,25 @@ export const api = {
   },
 
   async getAdminStats(): Promise<AdminStats> {
-    const res = await fetch(`${API_BASE_URL}/admin/stats`);
+    const res = await fetch(`${API_BASE_URL}/admin/stats`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat data statistik');
     return res.json();
   },
 
   async getProcurement(): Promise<ProcurementItem[]> {
-    const res = await fetch(`${API_BASE_URL}/admin/procurement`);
+    const res = await fetch(`${API_BASE_URL}/admin/procurement`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat rekap belanja pasar');
     return res.json();
   },
 
   async getFinancials(): Promise<FinancialReport> {
-    const res = await fetch(`${API_BASE_URL}/admin/financials`);
+    const res = await fetch(`${API_BASE_URL}/admin/financials`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat laporan keuangan dagang');
     return res.json();
   },
 
   async getWaste(): Promise<WasteRecord[]> {
-    const res = await fetch(`${API_BASE_URL}/admin/waste`);
+    const res = await fetch(`${API_BASE_URL}/admin/waste`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat catatan sayur rusak');
     return res.json();
   },
@@ -223,7 +254,7 @@ export const api = {
   async addWaste(record: Omit<WasteRecord, 'id' | 'created_at'>): Promise<WasteRecord> {
     const res = await fetch(`${API_BASE_URL}/admin/waste`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(record),
     });
     if (!res.ok) throw new Error('Gagal mencatat sayur afkir');
@@ -233,6 +264,7 @@ export const api = {
   async simulateOrder(): Promise<Order> {
     const res = await fetch(`${API_BASE_URL}/simulate-order`, {
       method: 'POST',
+      headers: getAdminAuthHeaders(),
     });
     if (!res.ok) throw new Error('Gagal menjalankan simulasi order');
     return res.json();
@@ -241,7 +273,7 @@ export const api = {
   async updateProduct(product: Product): Promise<Product> {
     const res = await fetch(`${API_BASE_URL}/products/${product.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(product),
     });
     if (!res.ok) throw new Error('Gagal mengupdate produk');
@@ -251,6 +283,7 @@ export const api = {
   async deleteProduct(id: string): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/products/${id}`, {
       method: 'DELETE',
+      headers: getAdminAuthHeaders(),
     });
     if (!res.ok) throw new Error('Gagal menghapus produk');
   },
@@ -258,6 +291,7 @@ export const api = {
   async deleteOrder(id: string): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/orders/${id}`, {
       method: 'DELETE',
+      headers: getAdminAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -268,7 +302,7 @@ export const api = {
   async bulkUpdatePrices(updates: { id: string; price: number; cost_price: number; stock?: number; variants?: any[] }[]): Promise<{ success: boolean; updated: number; message: string }> {
     const res = await fetch(`${API_BASE_URL}/products/bulk-prices`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(updates),
     });
     if (!res.ok) throw new Error('Gagal memperbarui harga produk');
@@ -280,8 +314,20 @@ export const api = {
     formData.append('file', file);
     formData.append('folder', folder);
 
+    const headers: Record<string, string> = {};
+    const adminHeaders = getAdminAuthHeaders();
+    if (adminHeaders.Authorization) {
+      headers.Authorization = adminHeaders.Authorization;
+    } else {
+      const customerHeaders = getCustomerAuthHeaders();
+      if (customerHeaders.Authorization) {
+        headers.Authorization = customerHeaders.Authorization;
+      }
+    }
+
     const res = await fetch(`${API_BASE_URL}/upload`, {
       method: 'POST',
+      headers,
       body: formData,
     });
     if (!res.ok) {
@@ -304,7 +350,7 @@ export const api = {
   async addProduct(product: Omit<Product, 'id' | 'rating' | 'sold_count'>): Promise<Product> {
     const res = await fetch(`${API_BASE_URL}/products`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(product),
     });
     if (!res.ok) throw new Error('Gagal menambah produk');
@@ -326,7 +372,11 @@ export const api = {
   async addProductReview(productId: string, review: Partial<Review>): Promise<Review> {
     const res = await fetch(`${API_BASE_URL}/products/${productId}/reviews`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getCustomerAuthHeaders(),
+        ...getAdminAuthHeaders(),
+      },
       body: JSON.stringify(review),
     });
     if (!res.ok) throw new Error('Gagal mengirim ulasan');
@@ -340,7 +390,14 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, password }),
       });
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.token && typeof window !== 'undefined') {
+          localStorage.setItem('jogopawon_customer_token', data.token);
+          sessionStorage.setItem('jogopawon_customer_token', data.token);
+        }
+        return data;
+      }
       const errData = await res.json().catch(() => ({}));
       throw new Error(errData.error || 'Nomor WhatsApp atau kata sandi salah.');
     } catch (e: any) {
@@ -373,13 +430,22 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData),
     });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.token && typeof window !== 'undefined') {
+        localStorage.setItem('jogopawon_customer_token', data.token);
+        sessionStorage.setItem('jogopawon_customer_token', data.token);
+      }
+      return data;
+    }
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.error || 'Gagal mendaftar akun baru.');
   },
 
   async getReferralInfo(phone: string): Promise<ReferralInfo> {
-    const res = await fetch(`${API_BASE_URL}/user/referral?phone=${encodeURIComponent(phone)}`);
+    const res = await fetch(`${API_BASE_URL}/user/referral?phone=${encodeURIComponent(phone)}`, {
+      headers: { ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
+    });
     if (!res.ok) throw new Error('Gagal memuat info referral');
     return await res.json();
   },
@@ -387,7 +453,7 @@ export const api = {
   async applyReferralCode(phone: string, referralCode: string): Promise<{ success: boolean; message: string; user?: User }> {
     const res = await fetch(`${API_BASE_URL}/user/apply-referral`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
       body: JSON.stringify({ phone, referral_code: referralCode }),
     });
     const data = await res.json().catch(() => ({}));
@@ -398,7 +464,7 @@ export const api = {
   },
 
   async getAdminUsers(): Promise<any[]> {
-    const res = await fetch(`${API_BASE_URL}/admin/users`);
+    const res = await fetch(`${API_BASE_URL}/admin/users`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat data pelanggan');
     return await res.json();
   },
@@ -419,10 +485,17 @@ export const api = {
   }): Promise<User> {
     const res = await fetch(`${API_BASE_URL}/auth/profile`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getCustomerAuthHeaders() },
       body: JSON.stringify(userData),
     });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.token && typeof window !== 'undefined') {
+        localStorage.setItem('jogopawon_customer_token', data.token);
+        sessionStorage.setItem('jogopawon_customer_token', data.token);
+      }
+      return data;
+    }
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.error || 'Gagal memperbarui profil.');
   },
@@ -448,7 +521,7 @@ export const api = {
   async addReward(reward: Omit<RewardItem, 'id'>): Promise<RewardItem> {
     const res = await fetch(`${API_BASE_URL}/rewards`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(reward),
     });
     if (!res.ok) {
@@ -461,7 +534,7 @@ export const api = {
   async updateReward(reward: RewardItem): Promise<RewardItem> {
     const res = await fetch(`${API_BASE_URL}/rewards/${reward.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(reward),
     });
     if (!res.ok) {
@@ -474,6 +547,7 @@ export const api = {
   async deleteReward(id: string): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/rewards/${id}`, {
       method: 'DELETE',
+      headers: getAdminAuthHeaders(),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -491,7 +565,10 @@ export const api = {
   }): Promise<{ success: boolean; message: string; remaining_points: number; reward: RewardItem; redemption?: RewardRedemption }> {
     const res = await fetch(`${API_BASE_URL}/rewards/redeem`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getCustomerAuthHeaders(),
+      },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -505,7 +582,9 @@ export const api = {
     const url = phone
       ? `${API_BASE_URL}/rewards/redemptions?phone=${encodeURIComponent(phone)}`
       : `${API_BASE_URL}/rewards/redemptions`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: { ...getCustomerAuthHeaders(), ...getAdminAuthHeaders() },
+    });
     if (!res.ok) throw new Error('Gagal memuat daftar klaim hadiah');
     return await res.json();
   },
@@ -529,7 +608,7 @@ export const api = {
   },
 
   async getAccounting(): Promise<AccountingSummary> {
-    const res = await fetch(`${API_BASE_URL}/admin/accounting`);
+    const res = await fetch(`${API_BASE_URL}/admin/accounting`, { headers: getAdminAuthHeaders() });
     if (!res.ok) throw new Error('Gagal memuat data akuntansi');
     return await res.json();
   },
@@ -537,7 +616,7 @@ export const api = {
   async addCashTransaction(tx: Omit<CashTransaction, 'id' | 'created_at'>): Promise<CashTransaction> {
     const res = await fetch(`${API_BASE_URL}/admin/accounting/transactions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(tx),
     });
     if (!res.ok) throw new Error('Gagal mencatat transaksi kas');
@@ -547,6 +626,7 @@ export const api = {
   async deleteCashTransaction(id: string): Promise<void> {
     const res = await fetch(`${API_BASE_URL}/admin/accounting/transactions/${id}`, {
       method: 'DELETE',
+      headers: getAdminAuthHeaders(),
     });
     if (!res.ok) throw new Error('Gagal menghapus transaksi kas');
   },
@@ -613,7 +693,7 @@ export const api = {
   async addScrapedItem(item: Partial<ScrapedPriceItem>): Promise<{ success: boolean; message: string; item: ScrapedPriceItem }> {
     const res = await fetch(`${API_BASE_URL}/scraper/add-item`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(item),
     });
     if (!res.ok) throw new Error('Gagal menambah penawaran harga');
@@ -637,7 +717,7 @@ export const api = {
   async sendPushBroadcast(payload: { title: string; body: string; url?: string; image?: string; category?: string }): Promise<{ success: boolean; message: string; subscriber_count: number }> {
     const res = await fetch(`${API_BASE_URL}/admin/push/broadcast`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAdminAuthHeaders() },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -686,7 +766,11 @@ export class SayurWebSocket {
     }
 
     try {
-      this.ws = new WebSocket(WS_URL);
+      const adminTok = typeof window !== 'undefined' ? (localStorage.getItem('jogopawon_admin_token') || sessionStorage.getItem('jogopawon_admin_token')) : null;
+      const custTok = typeof window !== 'undefined' ? (localStorage.getItem('jogopawon_customer_token') || sessionStorage.getItem('jogopawon_customer_token')) : null;
+      const tok = adminTok || custTok;
+      const wsUrl = tok ? `${WS_URL}?token=${encodeURIComponent(tok)}` : WS_URL;
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log('[WebSocket] Terhubung ke server realtime JogoPawon 🥬');
@@ -728,6 +812,15 @@ export class SayurWebSocket {
         setTimeout(() => this.connect(), this.reconnectInterval);
       }
     }
+  }
+
+  reconnect() {
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch {}
+    }
+    this.connect();
   }
 
   subscribe(listener: (msg: WSMessage) => void) {

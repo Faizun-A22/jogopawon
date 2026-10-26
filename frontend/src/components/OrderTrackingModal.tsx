@@ -160,7 +160,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({
   };
 
   const currentStepIdx = getStepIndex(order.status);
-  const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => { const num = typeof val === 'string' ? parseFloat(val) : val; return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 
   return (
     <div className="fixed inset-0 z-[80] overflow-y-auto flex items-center justify-center p-3 sm:p-4">

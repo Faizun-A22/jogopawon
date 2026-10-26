@@ -35,8 +35,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const isOutOfStock = product.stock <= 0;
 
-  const formatRupiah = (val: number) => {
-    return 'Rp' + val.toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => {
+    const num = typeof val === 'string' ? parseFloat(val) : val;
+    return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   };
 
   const [isFavorite, setIsFavorite] = React.useState(false);

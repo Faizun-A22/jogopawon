@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { User, Order, OrderStatus, UserAddress } from '../types';
 import { api, realtime } from '../services/api';
 import { compressImage } from '../utils/imageCompressor';
+import { findNearestCluster, PASURUAN_DELIVERY_CLUSTERS } from '../utils/deliveryCluster';
 import {
   ArrowLeft,
   ArrowRight,
@@ -100,7 +101,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [orderSearch, setOrderSearch] = useState<string>('');
   const [copiedOrderId, setCopiedOrderId] = useState<string | null>(null);
 
-  const formatRupiah = (val: number) => 'Rp' + (val || 0).toLocaleString('id-ID');
+  const formatRupiah = (val: number | string) => { const num = typeof val === 'string' ? parseFloat(val) : val; return 'Rp ' + Math.round(num || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 
   // Fetch customer orders
   const fetchCustomerOrders = useCallback(async () => {
@@ -357,6 +358,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
   const [modalAddress, setModalAddress] = useState('');
   const [modalLandmark, setModalLandmark] = useState('');
   const [modalHousePhoto, setModalHousePhoto] = useState('');
+  const [modalCluster, setModalCluster] = useState<string>('');
   const [modalLat, setModalLat] = useState<number | undefined>(undefined);
   const [modalLng, setModalLng] = useState<number | undefined>(undefined);
   const [isLocatingGPS, setIsLocatingGPS] = useState(false);
@@ -381,6 +383,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setModalAddress('');
     setModalLandmark('');
     setModalHousePhoto('');
+    setModalCluster('');
     setModalLat(undefined);
     setModalLng(undefined);
     setGpsStatusMessage(null);
@@ -397,6 +400,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
     setModalAddress(addr.address || '');
     setModalLandmark(addr.landmark || '');
     setModalHousePhoto(addr.house_photo_url || '');
+    setModalCluster(addr.delivery_cluster || '');
     setModalLat(addr.latitude);
     setModalLng(addr.longitude);
     setGpsStatusMessage(addr.latitude && addr.longitude ? `Titik GPS tersimpan (${addr.latitude.toFixed(5)}, ${addr.longitude.toFixed(5)})` : null);
@@ -421,7 +425,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
         const lng = pos.coords.longitude;
         setModalLat(lat);
         setModalLng(lng);
-        setGpsStatusMessage(`✅ Titik GPS Terkunci: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        const nearestMatch = findNearestCluster(lat, lng);
+        if (nearestMatch && nearestMatch.isWithinRadius) {
+          setModalCluster(nearestMatch.cluster.name);
+          setGpsStatusMessage(`✅ Titik GPS Terkunci (${lat.toFixed(5)}, ${lng.toFixed(5)}) • Terhubung ke: ${nearestMatch.cluster.badge} ${nearestMatch.cluster.name} (Jarak ${nearestMatch.distanceKm} km)`);
+        } else {
+          setGpsStatusMessage(`✅ Titik GPS Terkunci: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
 
         // Reverse Geocoding (OpenStreetMap Nominatim) untuk mengisi alamat otomatis jika masih kosong / singkat
         try {
@@ -1797,6 +1807,36 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({
                               <span>{gpsStatusMessage}</span>
                             </p>
                           )}
+
+                          {/* Pilihan Kluster Pengantaran Pasuruan */}
+                          <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 space-y-1.5">
+                            <div className="flex items-center justify-between text-xs font-black text-blue-900">
+                              <span className="flex items-center gap-1">
+                                <span>📍</span>
+                                <span>Kluster Pengantaran / Titik Kumpul Pasuruan:</span>
+                              </span>
+                              {modalCluster && (
+                                <span className="text-[10px] font-bold bg-blue-200 text-blue-800 px-2 py-0.2 rounded-full">
+                                  Terpilih
+                                </span>
+                              )}
+                            </div>
+                            <select
+                              value={modalCluster}
+                              onChange={(e) => setModalCluster(e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg bg-white border border-blue-300 text-xs font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-400"
+                            >
+                              <option value="">-- Otomatis / Deteksi dari Alamat / Bebas --</option>
+                              {PASURUAN_DELIVERY_CLUSTERS.map((c) => (
+                                <option key={c.id} value={c.name}>
+                                  {c.badge} {c.name}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-[10px] text-blue-700 block leading-tight">
+                              💡 Memilih kluster (misal RSUD / Perumahan) mengelompokkan pesanan Anda dengan rekan/tetangga agar hemat ongkir & rute cepat sampai!
+                            </span>
+                          </div>
                         </div>
                       </div>
 

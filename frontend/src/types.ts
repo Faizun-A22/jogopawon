@@ -86,6 +86,7 @@ export interface Order {
   subtotal: number;
   delivery_fee: number;
   discount: number;
+  promo_code?: string;
   total_amount: number;
   total_profit?: number; // Total laba pesanan (omzet - HPP modal kulakan)
   points_earned?: number; // 7% dari total laba/keuntungan pesanan untuk pembeli
@@ -99,6 +100,9 @@ export interface Order {
   house_photo_url?: string;
   status: OrderStatus;
   courier_name?: string;
+  delivery_cluster?: string; // Kluster pengantaran (misal: RSUD Purut, Bugul Kidul)
+  latitude?: number;
+  longitude?: number;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -167,6 +171,7 @@ export interface Review {
   product_id: string;
   user_name: string;
   user_avatar?: string;
+  user_phone?: string;
   location: string;
   rating: number;
   comment: string;
@@ -187,6 +192,7 @@ export interface UserAddress {
   latitude?: number; // Titik GPS latitude
   longitude?: number; // Titik GPS longitude
   maps_url?: string; // Link langsung Google Maps navigasi
+  delivery_cluster?: string; // Kluster wilayah terdekat
   is_primary: boolean;
 }
 
@@ -205,7 +211,8 @@ export interface User {
   referral_code?: string; // Kode referral unik milik akun (misal: SITI-7890)
   referred_by?: string; // Kode referral pengundang
   referral_earnings?: number; // Total koin diperoleh dari belanja teman (+5% laba)
-  referral_count?: number; // Jumlah teman yang berhasil diajak
+  referral_count?: number;
+  token?: string; // Jumlah teman yang berhasil diajak
   created_at?: string;
 }
 
