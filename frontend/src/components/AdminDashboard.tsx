@@ -94,6 +94,8 @@ import {
   Users,
   Phone,
   Bell,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -187,6 +189,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [catalogViewMode, setCatalogViewMode] = useState<'quick' | 'cards'>('quick');
   const [catalogSearch, setCatalogSearch] = useState<string>('');
   const [catalogCategory, setCatalogCategory] = useState<string>('all');
+  const [catalogVisibilityFilter, setCatalogVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [quickPriceEdits, setQuickPriceEdits] = useState<Record<string, { price: number; cost_price: number; stock: number }>>({});
   const [isSavingPrices, setIsSavingPrices] = useState<boolean>(false);
   const [priceSaveSuccess, setPriceSaveSuccess] = useState<string | null>(null);
@@ -266,6 +269,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // New product form
   const [newProdName, setNewProdName] = useState('');
+  const [newProdIsHidden, setNewProdIsHidden] = useState<boolean>(false);
+  const [isSubmittingProduct, setIsSubmittingProduct] = useState<boolean>(false);
   const [newProdCategory, setNewProdCategory] = useState(categories[0]?.id || '');
   const [newProdPrice, setNewProdPrice] = useState<number>(0);
   const [newProdCost, setNewProdCost] = useState<number>(0);
@@ -584,35 +589,45 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
 
   const handleAddProductSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const primaryImg = newProdImages[0] || newProdImg || '';
-    const primaryVid = newProdVideos[0] || '';
-    await onAddNewProduct({
-      name: newProdName,
-      category_id: newProdCategory,
-      price: newProdPrice,
-      cost_price: newProdCost,
-      unit: newProdUnit,
-      stock: newProdStock,
-      freshness: newProdFreshness,
-      origin: newProdOrigin,
-      description: newProdDesc,
-      image_url: primaryImg,
-      images: newProdImages.length > 0 ? newProdImages : (primaryImg ? [primaryImg] : []),
-      video_url: primaryVid,
-      videos: newProdVideos,
-      is_flash_sale: false,
-      is_popular: true,
-      po_batch: 'Panen Subuh Besok',
-      allow_custom_budget: newProdAllowCustomBudget,
-      min_custom_budget: newProdMinCustomBudget,
-    });
-    setIsAddProductOpen(false);
-    setNewProdName('');
-    setNewProdImg('');
-    setNewProdImages([]);
-    setNewProdVideos([]);
-    setNewProdAllowCustomBudget(false);
-    setNewProdMinCustomBudget(1000);
+    if (isSubmittingProduct) return;
+    setIsSubmittingProduct(true);
+    try {
+      const primaryImg = newProdImages[0] || newProdImg || '';
+      const primaryVid = newProdVideos[0] || '';
+      await onAddNewProduct({
+        name: newProdName,
+        category_id: newProdCategory,
+        price: newProdPrice,
+        cost_price: newProdCost,
+        unit: newProdUnit,
+        stock: newProdStock,
+        freshness: newProdFreshness,
+        origin: newProdOrigin,
+        description: newProdDesc,
+        image_url: primaryImg,
+        images: newProdImages.length > 0 ? newProdImages : (primaryImg ? [primaryImg] : []),
+        video_url: primaryVid,
+        videos: newProdVideos,
+        is_flash_sale: false,
+        is_popular: true,
+        is_hidden: newProdIsHidden,
+        po_batch: 'Panen Subuh Besok',
+        allow_custom_budget: newProdAllowCustomBudget,
+        min_custom_budget: newProdMinCustomBudget,
+      });
+      setIsAddProductOpen(false);
+      setNewProdName('');
+      setNewProdImg('');
+      setNewProdImages([]);
+      setNewProdVideos([]);
+      setNewProdAllowCustomBudget(false);
+      setNewProdMinCustomBudget(1000);
+      setNewProdIsHidden(false);
+    } catch (err: any) {
+      alert('Gagal menambah produk: ' + (err.message || 'Error'));
+    } finally {
+      setIsSubmittingProduct(false);
+    }
   };
 
   const handleMediaUpload = async (files: FileList | File[], isEdit: boolean = false) => {
@@ -745,6 +760,23 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
       image_url: images[0] || prod.image_url || '',
       video_url: videos[0] || prod.video_url || '',
     });
+  };
+
+  const handleToggleProductVisibility = async (prod: Product) => {
+    try {
+      const nextHidden = !prod.is_hidden;
+      const updatedProduct: Product = {
+        ...prod,
+        is_hidden: nextHidden,
+      };
+      await onUpdateProduct(updatedProduct);
+      setPriceSaveSuccess(
+        `Produk "${prod.name}" sekarang ${nextHidden ? 'Disembunyikan dari katalog pembeli' : 'Aktif & Tampil di katalog pembeli'}`
+      );
+      setTimeout(() => setPriceSaveSuccess(null), 3500);
+    } catch (err: any) {
+      alert('Gagal mengubah visibilitas produk: ' + (err.message || 'Error'));
+    }
   };
 
   const handleUpdateProductSubmit = async (e: React.FormEvent) => {
@@ -3489,6 +3521,45 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
               )}
             </div>
 
+            {/* Selector Filter Visibilitas Katalog: Semua, Aktif, Sembunyi */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs shrink-0">
+              <button
+                type="button"
+                onClick={() => setCatalogVisibilityFilter('all')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  catalogVisibilityFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Semua ({products.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatalogVisibilityFilter('visible')}
+                className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+                  catalogVisibilityFilter === 'visible'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-emerald-800'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Aktif ({products.filter((p) => !p.is_hidden).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatalogVisibilityFilter('hidden')}
+                className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+                  catalogVisibilityFilter === 'hidden'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-rose-700'
+                }`}
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                Disembunyikan ({products.filter((p) => !!p.is_hidden).length})
+              </button>
+            </div>
+
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-xs">
               <button
                 type="button"
@@ -3748,13 +3819,18 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {(products || [])
+                        .filter((p, index, self) => self.findIndex((item) => item.id === p.id) === index)
                         .filter((p) => {
                           const matchCat = catalogCategory === 'all' || p.category_id === catalogCategory;
                           const matchQ =
                             !catalogSearch ||
                             p.name.toLowerCase().includes(catalogSearch.toLowerCase()) ||
                             p.origin?.toLowerCase().includes(catalogSearch.toLowerCase());
-                          if (!matchCat || !matchQ) return false;
+                          const matchVis =
+                            catalogVisibilityFilter === 'all' ||
+                            (catalogVisibilityFilter === 'visible' && !p.is_hidden) ||
+                            (catalogVisibilityFilter === 'hidden' && !!p.is_hidden);
+                          if (!matchCat || !matchQ || !matchVis) return false;
 
                           if (smartPricingFilter !== 'all') {
                             const priceData = getProductPriceData(p);
@@ -3801,6 +3877,17 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                                   <span className="bg-slate-100 text-slate-600 text-[10px] font-semibold px-2 py-0.5 rounded-md">
                                     /{prod.unit}
                                   </span>
+                                  {prod.is_hidden ? (
+                                    <span className="bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-rose-200">
+                                      <EyeOff className="w-3 h-3 text-rose-500" />
+                                      Disembunyikan
+                                    </span>
+                                  ) : (
+                                    <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200">
+                                      <Eye className="w-3 h-3 text-emerald-600" />
+                                      Aktif di Katalog
+                                    </span>
+                                  )}
                                   {hasVariants && (
                                     <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
                                       <Scale className="w-3 h-3 text-emerald-600" />
@@ -4033,6 +4120,26 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                                   )}
                                   <button
                                     type="button"
+                                    onClick={() => handleToggleProductVisibility(prod)}
+                                    className={`p-1.5 rounded-lg text-xs font-bold transition-all border ${
+                                      prod.is_hidden
+                                        ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300 shadow-2xs'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                                    }`}
+                                    title={
+                                      prod.is_hidden
+                                        ? 'Produk sedang DISEMBUNYIKAN. Klik untuk Tampilkan ke Pembeli'
+                                        : 'Produk sedang AKTIF. Klik untuk Sembunyikan dari Pembeli'
+                                    }
+                                  >
+                                    {prod.is_hidden ? (
+                                      <EyeOff className="w-3.5 h-3.5 text-rose-600" />
+                                    ) : (
+                                      <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleStartEditProduct(prod)}
                                     className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-xs transition-colors"
                                     title="Edit detail lengkap / upload foto R2"
@@ -4061,13 +4168,18 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
             /* MODE 2: CARDS GRID VIEW */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {(products || [])
+                .filter((p, index, self) => self.findIndex((item) => item.id === p.id) === index)
                 .filter((p) => {
                   const matchCat = catalogCategory === 'all' || p.category_id === catalogCategory;
                   const matchQ =
                     !catalogSearch ||
                     p.name.toLowerCase().includes(catalogSearch.toLowerCase()) ||
                     p.origin?.toLowerCase().includes(catalogSearch.toLowerCase());
-                  return matchCat && matchQ;
+                  const matchVis =
+                    catalogVisibilityFilter === 'all' ||
+                    (catalogVisibilityFilter === 'visible' && !p.is_hidden) ||
+                    (catalogVisibilityFilter === 'hidden' && !!p.is_hidden);
+                  return matchCat && matchQ && matchVis;
                 })
                 .map((prod) => {
                   const priceData = getProductPriceData(prod);
@@ -4095,7 +4207,18 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                         </div>
 
                         <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-slate-800 text-sm truncate">{prod.name}</h4>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="font-bold text-slate-800 text-sm truncate">{prod.name}</h4>
+                            {prod.is_hidden ? (
+                              <span className="bg-rose-100 text-rose-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-rose-200 shrink-0">
+                                <EyeOff className="w-2.5 h-2.5" /> Sembunyi
+                              </span>
+                            ) : (
+                              <span className="bg-emerald-50 text-emerald-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-emerald-200 shrink-0">
+                                <Eye className="w-2.5 h-2.5" /> Aktif
+                              </span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-slate-400 block">{prod.origin}</span>
 
                           <div className="mt-1 flex items-center gap-2">
@@ -4140,6 +4263,23 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                         </button>
 
                         <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleProductVisibility(prod)}
+                            className={`px-2.5 py-1.5 rounded-xl font-bold flex items-center gap-1 transition-colors text-xs border ${
+                              prod.is_hidden
+                                ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-300'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                            }`}
+                            title={
+                              prod.is_hidden
+                                ? 'Produk sedang disembunyikan. Klik untuk Tampilkan'
+                                : 'Produk sedang aktif. Klik untuk Sembunyikan'
+                            }
+                          >
+                            {prod.is_hidden ? <EyeOff className="w-3.5 h-3.5 text-rose-600" /> : <Eye className="w-3.5 h-3.5 text-slate-600" />}
+                            <span>{prod.is_hidden ? 'Tampilkan' : 'Sembunyi'}</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleStartEditProduct(prod)}
@@ -5127,6 +5267,39 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                 )}
               </div>
 
+              {/* Toggle Sembunyikan dari Katalog Pembeli saat Tambah */}
+              <div className={`p-3 rounded-2xl border transition-all ${newProdIsHidden ? 'bg-rose-50/80 border-rose-300' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="font-bold text-xs flex items-center gap-1.5 cursor-pointer text-slate-900">
+                      {newProdIsHidden ? (
+                        <>
+                          <EyeOff className="w-4 h-4 text-rose-600" />
+                          <span className="text-rose-900 font-extrabold">Sembunyikan dari Katalog Pembeli</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4 text-emerald-600" />
+                          <span className="text-slate-800 font-extrabold">Tampilkan di Katalog Pembeli (Aktif)</span>
+                        </>
+                      )}
+                    </label>
+                    <p className={`text-[10px] mt-0.5 ${newProdIsHidden ? 'text-rose-700' : 'text-slate-500'}`}>
+                      {newProdIsHidden ? 'Produk hanya disimpan untuk keperluan internal/admin.' : 'Produk langsung muncul di etalase belanja pembeli.'}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={newProdIsHidden}
+                      onChange={(e) => setNewProdIsHidden(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="font-bold block mb-1">Harga Jual (Rp)</label>
@@ -5394,10 +5567,17 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                 </button>
                 <button
                   type="submit"
-                  disabled={isUploadingR2}
+                  disabled={isUploadingR2 || isSubmittingProduct}
                   className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold"
                 >
-                  Simpan Produk
+                  {isSubmittingProduct ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Menyimpan...
+                    </span>
+                  ) : (
+                    'Simpan Produk'
+                  )}
                 </button>
               </div>
             </form>
@@ -5576,6 +5756,41 @@ Terima kasih atas kepercayaannya berbelanja di JogoPawon Mart. 🙏🥬`;
                   <span className="text-xs text-slate-600 font-bold block mt-1">
                     {editingProduct.stock} {editingProduct.unit}
                   </span>
+                </div>
+              </div>
+
+              {/* Sembunyikan dari Katalog Pembeli Toggle */}
+              <div className={`p-3.5 rounded-2xl border transition-all ${editingProduct.is_hidden ? 'bg-rose-50/80 border-rose-300' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="font-bold text-xs flex items-center gap-1.5 cursor-pointer text-slate-900">
+                      {editingProduct.is_hidden ? (
+                        <>
+                          <EyeOff className="w-4 h-4 text-rose-600" />
+                          <span className="text-rose-900 font-extrabold">Status: Disembunyikan dari Katalog</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4 text-emerald-600" />
+                          <span className="text-emerald-950 font-extrabold">Status: Aktif & Tampil di Katalog</span>
+                        </>
+                      )}
+                    </label>
+                    <p className={`text-[10px] mt-0.5 ${editingProduct.is_hidden ? 'text-rose-700 font-medium' : 'text-slate-500'}`}>
+                      {editingProduct.is_hidden
+                        ? 'Produk tidak akan terlihat atau dicari oleh pembeli, namun tetap aman tersimpan di admin.'
+                        : 'Produk aktif muncul di katalog toko dan dapat dipesan oleh pembeli.'}
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={editingProduct.is_hidden || false}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, is_hidden: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
                 </div>
               </div>
 

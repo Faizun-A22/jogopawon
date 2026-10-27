@@ -420,7 +420,7 @@ export const App: React.FC = () => {
 
       const [cats, prods, slots, ords, stats] = await Promise.all([
         api.getCategories().catch(() => []),
-        api.getProducts().catch(() => []),
+        api.getProducts(undefined, undefined, shouldFetchAdminData).catch(() => []),
         api.getDeliverySlots().catch(() => []),
         shouldFetchAdminData
           ? api.getAdminOrders().catch(() => [])
@@ -652,7 +652,13 @@ export const App: React.FC = () => {
 
   const handleAddNewProduct = async (productData: Omit<Product, 'id' | 'rating' | 'sold_count'>) => {
     const created = await api.addProduct(productData);
-    setProducts((prev) => [created, ...prev]);
+    setProducts((prev) => {
+      const exists = prev.some((p) => p.id === created.id);
+      if (exists) {
+        return prev.map((p) => (p.id === created.id ? created : p));
+      }
+      return [created, ...prev];
+    });
   };
 
   const handleDeleteProduct = async (productId: string) => {
@@ -662,7 +668,9 @@ export const App: React.FC = () => {
   };
 
   const filteredProducts = products
+    .filter((p, index, self) => self.findIndex((item) => item.id === p.id) === index)
     .filter((p) => {
+      if (p.is_hidden) return false;
       const matchCat = selectedCategory === 'all' || p.category_id === selectedCategory;
       const matchSearch =
         searchQuery === '' ||

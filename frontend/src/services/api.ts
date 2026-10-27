@@ -159,12 +159,18 @@ export const api = {
     return res.json();
   },
 
-  async getProducts(category?: string, search?: string): Promise<Product[]> {
+  async getProducts(category?: string, search?: string, includeHidden = false): Promise<Product[]> {
     const params = new URLSearchParams();
     if (category && category !== 'all') params.append('category', category);
     if (search) params.append('search', search);
+    if (includeHidden) params.append('include_hidden', 'true');
 
-    const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`);
+    const headers: Record<string, string> = {};
+    if (includeHidden) {
+      Object.assign(headers, getAdminAuthHeaders());
+    }
+
+    const res = await fetch(`${API_BASE_URL}/products?${params.toString()}`, { headers });
     if (!res.ok) throw new Error('Gagal memuat produk sayur');
     const raw = await res.json();
     const products: Product[] = Array.isArray(raw) ? raw : [];
@@ -302,6 +308,13 @@ export const api = {
     });
     if (!res.ok) throw new Error('Gagal menjalankan simulasi order');
     return res.json();
+  },
+
+  async toggleProductVisibility(product: Product, isHidden: boolean): Promise<Product> {
+    return this.updateProduct({
+      ...product,
+      is_hidden: isHidden,
+    });
   },
 
   async updateProduct(product: Product): Promise<Product> {

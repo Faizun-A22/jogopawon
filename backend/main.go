@@ -76,6 +76,7 @@ type Product struct {
 	SoldCount     int              `json:"sold_count"`
 	IsFlashSale   bool             `json:"is_flash_sale"`
 	IsPopular     bool             `json:"is_popular"`
+	IsHidden      bool             `json:"is_hidden"`
 	POBatch       string           `json:"po_batch"` // e.g. "Panen Besok Subuh"
 	Variants      []ProductVariant `json:"variants,omitempty"`
 	AllowCustomBudget bool         `json:"allow_custom_budget"`
@@ -1543,7 +1544,7 @@ func (s *Store) loadProductsFromDB() {
 		       COALESCE(freshness, 'Segar Petik Subuh'), COALESCE(origin, 'Pasuruan'),
 		       COALESCE(description, ''), COALESCE(image_url, ''), COALESCE(rating, 5.0),
 		       COALESCE(sold_count, 0), COALESCE(is_flash_sale, false), COALESCE(is_popular, false),
-		       COALESCE(po_batch, 'Panen Subuh Besok')
+		       COALESCE(po_batch, 'Panen Subuh Besok'), COALESCE(is_hidden, false)
 		FROM products
 		ORDER BY created_at DESC
 	`)
@@ -1560,7 +1561,7 @@ func (s *Store) loadProductsFromDB() {
 			&p.ID, &p.Name, &p.CategoryID, &p.Price, &p.CostPrice,
 			&p.DiscountPrice, &p.Unit, &p.Stock, &p.Freshness, &p.Origin,
 			&p.Description, &p.ImageURL, &p.Rating, &p.SoldCount, &p.IsFlashSale,
-			&p.IsPopular, &p.POBatch,
+			&p.IsPopular, &p.POBatch, &p.IsHidden,
 		); err == nil {
 			p.NormalizeMedia()
 			dbProds = append(dbProds, p)
@@ -1571,8 +1572,9 @@ func (s *Store) loadProductsFromDB() {
 		s.mutex.Lock()
 		for _, dbP := range dbProds {
 			exists := false
-			for _, cur := range s.products {
+			for idx, cur := range s.products {
 				if cur.ID == dbP.ID || strings.EqualFold(cur.ID, dbP.ID) {
+					s.products[idx].IsHidden = dbP.IsHidden
 					exists = true
 					break
 				}
@@ -1759,6 +1761,7 @@ func (a *App) handleProducts(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		categoryID := r.URL.Query().Get("category")
 		search := strings.ToLower(r.URL.Query().Get("search"))
+		includeHidden := r.URL.Query().Get("include_hidden") == "true" || a.validateAdminRequest(r)
 
 		a.store.mutex.RLock()
 		defer a.store.mutex.RUnlock()
@@ -1766,6 +1769,9 @@ func (a *App) handleProducts(w http.ResponseWriter, r *http.Request) {
 		filtered := []Product{}
 		for _, p := range a.store.products {
 			p.NormalizeMedia()
+			if p.IsHidden && !includeHidden {
+				continue
+			}
 			matchCategory := (categoryID == "" || categoryID == "all" || p.CategoryID == categoryID)
 			matchSearch := (search == "" || strings.Contains(strings.ToLower(p.Name), search) || strings.Contains(strings.ToLower(p.Description), search))
 			if matchCategory && matchSearch {
@@ -1804,6 +1810,21 @@ func (a *App) handleProducts(w http.ResponseWriter, r *http.Request) {
 		a.store.products = append(a.store.products, newProd)
 		a.store.mutex.Unlock()
 		a.store.saveProductsToDisk()
+
+		if a.store.db != nil {
+			go func(prod Product) {
+				_, dbErr := a.store.db.Exec(`
+					INSERT INTO products (id, name, category_id, price, cost_price, discount_price, unit, stock, freshness, origin, description, image_url, rating, sold_count, is_flash_sale, is_popular, po_batch, is_hidden, created_at, updated_at)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+					ON CONFLICT (id) DO UPDATE 
+					SET name = EXCLUDED.name, category_id = EXCLUDED.category_id, price = EXCLUDED.price, cost_price = EXCLUDED.cost_price,
+					    unit = EXCLUDED.unit, stock = EXCLUDED.stock, is_hidden = EXCLUDED.is_hidden, updated_at = NOW()
+				`, prod.ID, prod.Name, prod.CategoryID, prod.Price, prod.CostPrice, prod.DiscountPrice, prod.Unit, prod.Stock, prod.Freshness, prod.Origin, prod.Description, prod.ImageURL, prod.Rating, prod.SoldCount, prod.IsFlashSale, prod.IsPopular, prod.POBatch, prod.IsHidden)
+				if dbErr != nil {
+					log.Printf("[Database Warning] Gagal simpan produk baru '%s' ke PostgreSQL: %v\n", prod.ID, dbErr)
+				}
+			}(newProd)
+		}
 
 		a.hub.broadcast <- WSMessage{
 			Event:   "PRODUCT_UPDATED",
@@ -1857,7 +1878,7 @@ func (a *App) handleProductDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		a.store.mutex.RUnlock()
 
-		if found == nil {
+		if found == nil || (found.IsHidden && !a.validateAdminRequest(r)) {
 			http.Error(w, "Product not found", http.StatusNotFound)
 			return
 		}
@@ -1934,9 +1955,9 @@ func (a *App) handleProductDetail(w http.ResponseWriter, r *http.Request) {
 			go func(prod Product) {
 				_, dbErr := a.store.db.Exec(`
 					UPDATE products 
-					SET name = $1, category_id = $2, price = $3, cost_price = $4, unit = $5, stock = $6, updated_at = NOW()
-					WHERE id = $7
-				`, prod.Name, prod.CategoryID, prod.Price, prod.CostPrice, prod.Unit, prod.Stock, prod.ID)
+					SET name = $1, category_id = $2, price = $3, cost_price = $4, unit = $5, stock = $6, is_hidden = $7, updated_at = NOW()
+					WHERE id = $8
+				`, prod.Name, prod.CategoryID, prod.Price, prod.CostPrice, prod.Unit, prod.Stock, prod.IsHidden, prod.ID)
 				if dbErr != nil {
 					log.Printf("[Database Warning] Gagal sinkronisasi update produk '%s' ke PostgreSQL: %v\n", prod.ID, dbErr)
 				}
@@ -7214,6 +7235,7 @@ func main() {
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS videos TEXT[] DEFAULT '{}';
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12, 2) DEFAULT 0;
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS allow_custom_budget BOOLEAN DEFAULT false;
+				ALTER TABLE products ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT false;
 				ALTER TABLE products ADD COLUMN IF NOT EXISTS min_custom_budget NUMERIC(12, 2) DEFAULT 1000;
 				ALTER TABLE products ALTER COLUMN stock TYPE NUMERIC(10, 2) USING stock::NUMERIC(10, 2);`
 				if _, execErr := db.Exec(initProductsSQL); execErr != nil {

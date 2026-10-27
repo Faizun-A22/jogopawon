@@ -42,6 +42,7 @@ export interface Product {
   sold_count: number;
   is_flash_sale: boolean;
   is_popular: boolean;
+  is_hidden?: boolean;
   po_batch: string; // "Panen Subuh Besok"
   variants?: ProductVariant[];
   allow_custom_budget?: boolean; // Izinkan beli eceran sesuai budget bebas (misal Rp 2.000)
